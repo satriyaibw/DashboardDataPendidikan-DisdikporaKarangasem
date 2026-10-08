@@ -14,22 +14,26 @@ METABASE_SITE_URL=http://localhost:3000
 | Dashboard | ID | Akses | Keterangan |
 |---|---|---|---|
 | **Publik** | `2` | Public (tanpa login) | Agregat tinggi, tanpa PII |
-| **VIP** | `4` | User VIP (login) | Agregat detail + PII (via view khusus) |
+| **VIP** | `4` | User VIP (login) | Agregat detail + PII |
 | **Admin** | `3` | Admin saja | Full view, query native |
 
 ## Database Connections
 
 | Koneksi | ID | User | Schema | Query Native | Dipakai Untuk |
 |---|---|---|---|---|---|
-| `backbone_admin` | `2` | `admin_full` | `metrics`, `dbo`, `ref` | **Ya** | Admin (verifikasi, troubleshooting) |
-| `backbone_read` | `3` | `analis` | `metrics` saja | **Tidak** | VIP & Public |
+| `backbone_admin` | `2` | `admin_full` | `dbo`, `ref`, `datamart`, `metrics` | **Ya** | Semua dashboard (Publik, VIP, Admin) |
 
-## Collections
+**Catatan:** Hanya ada 1 koneksi database. Semua dashboard menggunakan koneksi yang sama. Admin bisa query native ke semua schema (`dbo`, `ref`, `datamart`, `metrics`). User VIP/Public hanya bisa melihat dashboard yang sudah disiapkan oleh admin.
 
-| Collection | Isi | Akses |
+## Kontrol Akses
+
+| Role | Akses | Keterangan |
 |---|---|---|
-| `Admin Only` | Dashboard Admin, Query native PII | Hanya Admin |
-| `Dashboards` | Dashboard Publik, Dashboard VIP | Publik & VIP |
+| **Public** | Hanya dashboard Publik | Tidak perlu login, hanya melihat dashboard yang disiapkan admin (tanpa PII) |
+| **VIP** | Hanya dashboard VIP | Login, hanya melihat dashboard yang disiapkan admin (dengan PII) |
+| **Admin** | Full | Bisa query native ke semua schema (`dbo`, `ref`, `datamart`, `metrics`) |
+
+**Kontrol akses dilakukan melalui permission per dashboard/collection, bukan per koneksi database.**
 
 ## Caching
 
@@ -42,15 +46,6 @@ METABASE_SITE_URL=http://localhost:3000
 - **Static/Guest Embedding:** Diaktifkan untuk Dashboard VIP
 - **Public link/embed:** Hanya untuk Dashboard Publik
 - **Embedding Secret Key:** Disimpan di `METABASE_EMBEDDING_SECRET` (Laravel) dan `MB_EMBEDDING_SECRET_KEY` (Metabase) — **harus sama**
-
-## View PII untuk VIP
-
-View khusus di schema `metrics` yang berisi data PII, hanya bisa diakses melalui dashboard VIP:
-
-| View | Keterangan |
-|---|---|
-| `metrics.v_peserta_didik_detail` | Detail peserta didik (nama, NISN, NIK, dll) |
-| `metrics.v_ptk_detail` | Detail PTK (nama, NIK, NUPTK, dll) |
 
 ## Prosedur Rotasi Secret
 

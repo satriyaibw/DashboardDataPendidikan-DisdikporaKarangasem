@@ -156,15 +156,14 @@ Draft awal benar secara arah, tetapi memiliki **gap kritis** berikut. MasterPlan
 - [ ] Akses Metabase hanya dari jaringan internal/VPN (bind ke localhost/reverse proxy), kecuali endpoint embed.
 
 ### 6.2 Koneksi data
-- [ ] Tambah **2 koneksi database** tipe PostgreSQL:
-  - **Koneksi 1 (`backbone_admin`)**: host backbone, DB `backbone_client`, user `admin_full`, **SSL aktif**, query native **YA**. Untuk admin (full view, read-only).
-  - **Koneksi 2 (`backbone_read`)**: host backbone, DB `backbone_client`, user `analis`, **SSL aktif**, query native **TIDAK**, "Only these schemas" → `metrics`. Untuk VIP & Public.
-- [ ] Arahkan Metabase ke schema **`metrics` (kontrak)** — bukan langsung ke `dbo`/`datamart`. Aktifkan "Only these schemas" untuk `metrics` (+ `ref` bila perlu lookup).
+- [ ] Tambah **1 koneksi database** tipe PostgreSQL:
+  - **Koneksi (`backbone_admin`)**: host backbone, DB `backbone_client`, user `admin_full`, **SSL aktif**, query native **YA**. Untuk semua dashboard (Publik, VIP, Admin).
+- [ ] Arahkan Metabase ke semua schema (`dbo`, `ref`, `datamart`, `metrics`) — admin bisa query native ke semua schema.
 - [ ] Uji koneksi & query sample.
 
 ### 6.3 Dashboard
 - [ ] Susun **Dashboard Publik** (`PUBLIC_DASHBOARD_ID`): hanya agregat non-sensitif (mis. jumlah sekolah, jumlah siswa per kecamatan, rasio guru/murid). Tanpa PII.
-- [ ] Susun **Dashboard VIP** (`VIP_DASHBOARD_ID`): analitik lebih dalam (usia, golongan, pendidikan, rombel, kelulusan, dll) + akses PII via view khusus (`metrics.v_peserta_didik_detail`, `metrics.v_ptk_detail`). User VIP **tidak bisa query native**, hanya bisa lihat/filter/download grafik.
+- [ ] Susun **Dashboard VIP** (`VIP_DASHBOARD_ID`): analitik lebih dalam (usia, golongan, pendidikan, rombel, kelulusan, dll) + akses PII. User VIP **tidak bisa query native**, hanya bisa lihat/filter/download grafik.
 - [ ] Susun **Dashboard Admin** (`ADMIN_DASHBOARD_ID`): full view, query native ke `dbo.*` untuk verifikasi/troubleshooting. Read-only (no DELETE/EDIT).
 - [ ] Catat ID dashboard + ID pertanyaan penting → `docs/metabase-ids.md`.
 
@@ -181,8 +180,10 @@ Draft awal benar secara arah, tetapi memiliki **gap kritis** berikut. MasterPlan
 
 ### 6.6 Role & Akses (3 Role)
 - [ ] **Admin** (`admin_full`): full view, query native ke `dbo.*`, read-only (no DELETE/EDIT). Bisa lihat semua data termasuk PII.
-- [ ] **VIP** (`analis` via `backbone_read`): bisa lihat PII via view khusus (`metrics.v_peserta_didik_detail`, `metrics.v_ptk_detail`). **Tidak bisa query native**, hanya bisa lihat/filter/download grafik.
-- [ ] **Public** (`analis` via `backbone_read`): hanya agregat, tanpa PII, tanpa data detail.
+- [ ] **VIP**: bisa lihat PII melalui dashboard VIP yang disiapkan admin. **Tidak bisa query native**, hanya bisa lihat/filter/download grafik.
+- [ ] **Public**: hanya agregat, tanpa PII, tanpa data detail. Hanya bisa melihat dashboard Publik yang disiapkan admin.
+
+**Kontrol akses dilakukan melalui permission per dashboard/collection, bukan per koneksi database.**
 
 **Deliverable Fase 2:** Metabase jalan, 2 dashboard, env secret, `docs/metabase-ids.md`.
 **DoD:** keduanya dapat dibuka; VIP dashboard berhasil ditoken (uji cepat dengan skrip); caching aktif.
