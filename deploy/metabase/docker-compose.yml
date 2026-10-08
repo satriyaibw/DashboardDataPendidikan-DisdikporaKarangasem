@@ -2,10 +2,10 @@
 # Fase 2 — Metabase OSS + PostgreSQL Metadata
 #
 # Spesifikasi: MasterPlan.md §6, Issue #3
-# - Metabase terhubung read-only ke backbone_client (role `analis`, SSL aktif)
-# - Hanya membaca schema kontrak `metrics.*`
-# - 2 dashboard: Publik (non-sensitif) & VIP (analitik dalam, tanpa PII)
-# - Query caching aktif
+# - Metabase terhubung read-only ke backbone_client (role `admin_full`, SSL aktif)
+# - Query native ke semua schema (`dbo`, `ref`, `datamart`, `metrics`)
+# - 3 dashboard: Publik (non-sensitif), VIP (termasuk PII), Admin (full view)
+# - Query caching dikonfigurasi per dashboard/pertanyaan (Admin → Caching)
 # - Siap untuk Guest/Static Embedding (JWT HS256)
 #
 # Cara pakai:
@@ -27,7 +27,7 @@ services:
       # --- Metadata database (PostgreSQL terpisah) ---
       MB_DB_TYPE: postgres
       MB_DB_HOST: postgres
-      MB_DB_PORT: 5432
+      MB_DB_PORT: "5432"
       MB_DB_DBNAME: ${METABASE_MB_DB_DBNAME:-metabase}
       MB_DB_USER: ${METABASE_MB_DB_USER:-metabase}
       MB_DB_PASS: ${METABASE_MB_DB_PASS:?MB_DB_PASS harus diisi di .env}
@@ -35,18 +35,21 @@ services:
       # --- Embedding Secret (min. 32 karakter, generate: openssl rand -hex 32) ---
       MB_EMBEDDING_SECRET_KEY: ${METABASE_MB_EMBEDDING_SECRET_KEY:?MB_EMBEDDING_SECRET_KEY harus diisi di .env}
 
+      # --- Encryption key untuk kredensial koneksi DB di metadata (min. 16 karakter) ---
+      # Generate: openssl rand -base64 32. PENTING: jangan hilang/diubah setelah di-set,
+      # atau semua kredensial koneksi harus di-set ulang di Admin Panel.
+      MB_ENCRYPTION_SECRET_KEY: ${METABASE_MB_ENCRYPTION_SECRET_KEY:?METABASE_MB_ENCRYPTION_SECRET_KEY harus diisi di .env}
+
       # --- Site URL (untuk embed & public link) ---
       MB_SITE_URL: ${METABASE_SITE_URL:-http://localhost:3000}
 
-      # --- Locale ---
+      # --- Locale (default bahasa UI) ---
       MB_APPLICATION_NAME: "Dashboard Pendidikan Karangasem"
-      MB_LANGUAGE: id  # Bahasa Indonesia
-
-      # --- Query caching (default TTL dalam menit) ---
-      MB_CACHE_TTL: 180  # 3 jam default cache
+      MB_SITE_LOCALE: id  # Bahasa Indonesia (default instance, user bisa override)
 
     volumes:
-      - metabase_data:/metabase.db  # Persistensi data Metabase (plugin, upload, etc)
+      # Metadata Metabase disimpan di PostgreSQL terpisah (lihat service `postgres`).
+      # Tidak perlu volume /metabase.db karena MB_DB_TYPE=postgres (bukan H2).
       - /dev/urandom:/dev/random:ro  # Entropy untuk kriptografi
 
     networks:
@@ -56,11 +59,11 @@ services:
       test: ["CMD", "curl", "--fail", "-I", "http://localhost:3000/api/health"]
       interval: 15s
       timeout: 5s
-      retries: 5
-      start_period: 30s
+      retries: 10
+      start_period: 120s  # First-boot migrasi app DB bisa memakan waktu menit
 
   postgres:
-    image: postgres:16
+    image: postgres:16-alpine
     container_name: metabase_postgres
     hostname: postgres
     restart: unless-stopped
@@ -83,7 +86,5 @@ networks:
     driver: bridge
 
 volumes:
-  metabase_data:
-    driver: local
   postgres_data:
     driver: local

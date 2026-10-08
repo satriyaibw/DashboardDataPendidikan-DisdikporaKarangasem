@@ -37,8 +37,9 @@ METABASE_SITE_URL=http://localhost:3000
 
 ## Caching
 
-- **Default TTL:** 180 menit (3 jam)
+- **Default TTL:** 180 menit (3 jam) — dikonfigurasi per dashboard/pertanyaan
 - **Cache diaktifkan:** Admin → Settings → Caching
+- **Catatan:** Metabase tidak memiliki env var global cache TTL; atur via UI/config file
 - **Untuk kartu berat:** Set cache kustom atau scheduled refresh
 
 ## Embedding
@@ -59,8 +60,8 @@ METABASE_SITE_URL=http://localhost:3000
 
 | Gejala | Kemungkinan penyebab | Aksi |
 |---|---|---|
-| Metabase tidak bisa konek DB backbone | host/port/firewall/SSL | `psql -h <host> -U analis -d backbone_client` dari container; cek SSL |
-| Dashboard kosong / "table not found" | GRANT `metrics` belum ada untuk `analis` | jalankan ulang GRANT di `database/sql/metrics_views.sql` |
+| Metabase tidak bisa konek DB backbone | host/port/firewall/SSL | `psql -h <host> -U admin_full -d backbone_client` dari container; cek SSL |
+| Dashboard kosong / "table not found" | GRANT belum ada untuk `admin_full` | jalankan ulang GRANT di `database/sql/admin_full_role.sql` |
 | Token embed ditolak | secret tidak sama / exp salah / TTL lewat | samakan secret, cek `exp` epoch detik |
 | Dashboard lambat | kartu query langsung ke `dbo` | pindahkan sumber kartu ke `metrics.*`, aktifkan cache |
-| Metadata hilang setelah restart | volume tidak persisten | cek `volumes:` di compose |
+| Metadata hilang setelah restart | volume tidak persisten | cek `volumes: postgres_data` di compose |

@@ -185,8 +185,8 @@ Draft awal benar secara arah, tetapi memiliki **gap kritis** berikut. MasterPlan
 
 **Kontrol akses dilakukan melalui permission per dashboard/collection, bukan per koneksi database.**
 
-**Deliverable Fase 2:** Metabase jalan, 2 dashboard, env secret, `docs/metabase-ids.md`.
-**DoD:** keduanya dapat dibuka; VIP dashboard berhasil ditoken (uji cepat dengan skrip); caching aktif.
+**Deliverable Fase 2:** Metabase jalan, 3 dashboard, env secret, `docs/metabase-ids.md`.
+**DoD:** ketiganya dapat dibuka; VIP dashboard berhasil ditoken (uji cepat dengan skrip); caching aktif.
 
 ---
 
@@ -392,7 +392,7 @@ dashboard-karangasem/
 ## 15. Checklist Global (ringkas)
 
 - [ ] F1 Lapisan kontrak `metrics` dibangun dari `dbo/ref`; jalur migrasi ke `datamart` disiapkan
-- [ ] F2 Metabase + 2 dashboard + cache + secret
+- [ ] F2 Metabase + 3 dashboard + cache + secret
 - [ ] F3 Laravel 13 + Filament 5 + RBAC + middleware
 - [ ] F4 Signed embedding publik & VIP
 - [ ] F5 Privasi/keamanan/hardening
