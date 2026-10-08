@@ -47,3 +47,25 @@ Rencana dan implementasi **Dashboard Data Pendidikan Kabupaten Karangasem**.
 - Role admin: `database/sql/admin_full_role.sql`.
 - Dokumentasi: `docs/metabase-ids.md`.
 
+
+## Fase 3 — Laravel + Filament (Status: SELESAI)
+
+- Project Laravel 13 di subdirektori `dashboard-karangasem/` (PHP 8.5, `composer.lock` ter-commit).
+- DB aplikasi terpisah `app_db` (user `app`, non-superuser); Laravel tidak menyentuh `backbone_client`.
+- Spatie Permission: role `admin` & `vip`; seeder admin awal (email/password dari env `ADMIN_EMAIL`/`ADMIN_PASSWORD`).
+- Filament 5 panel `/admin` dibatasi via `FilamentUser::canAccessPanel()` → role `admin`.
+- Kolom user: `expires_at` (index), `is_active`, `vip_notes`.
+- `UserResource`: CRUD user VIP, badge status Aktif/Kedaluwarsa/Nonaktif, action Perpanjang 30 hari & Aktif/Nonaktifkan, filter role & status.
+- Middleware `CheckVipAccess` (`check.vip`) pada grup `/vip/*`: login → role vip → is_active → expires_at null/>now; gagal → logout + redirect + pesan; tanpa tulis DB.
+- Login VIP custom minimal (`/login`, `/vip/login`, rate limit, throttle); health `GET /up`.
+- Feature tests T2–T8: `php artisan test` (10 passed).
+
+### Menjalankan
+
+```bash
+cd dashboard-karangasem
+cp .env.example .env   # isi DB_* dan ADMIN_PASSWORD
+php artisan key:generate
+php artisan migrate --seed
+php artisan serve
+```
