@@ -60,12 +60,16 @@ Rencana dan implementasi **Dashboard Data Pendidikan Kabupaten Karangasem**.
 - Login VIP custom minimal (`/login`, `/vip/login`, rate limit, throttle); health `GET /up`.
 - Feature tests T2–T8: `php artisan test` (10 passed).
 
-### Menjalankan
+### Menjalankan (Docker / Laravel Sail)
 
 ```bash
 cd dashboard-karangasem
-cp .env.example .env   # isi DB_* dan ADMIN_PASSWORD
-php artisan key:generate
-php artisan migrate --seed
-php artisan serve
+cp .env.example .env   # isi ADMIN_PASSWORD
+./vendor/bin/sail up -d --build
+./vendor/bin/sail artisan migrate --seed
 ```
+
+- Web: http://localhost:8000 (`APP_PORT`), Postgres container di `localhost:5433` (`FORWARD_DB_PORT`).
+- Test: `./vendor/bin/sail artisan test`.
+- DB aplikasi: Postgres 18 container (service `pgsql`, db `app_db`, user `app`) — terpisah dari Postgres lokal backbone.
+- Tanpa Docker tetap bisa: `php artisan serve` dengan `DB_HOST=127.0.0.1` mengarah ke Postgres lokal.
