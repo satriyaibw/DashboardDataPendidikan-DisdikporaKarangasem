@@ -25,8 +25,8 @@ Draft awal benar secara arah, tetapi memiliki **gap kritis** berikut. MasterPlan
 
 | # | Isu di Draft | Dampak | Koreksi di MasterPlan |
 |---|---|---|---|
-| 1 | Fase 1 menyuruh **membuat akun read-only baru** & membuat Materialized View dari nol | Berat, dan **redundan** | Database `backbone_client` **sudah punya role `analis`** (read-only, `GRANT SELECT` di semua schema) dan **schema `datamart` berisi 22 tabel agregat** siap pakai. **Gunakan yang ada**, jangan bikin ulang. Lihat §5 & Lampiran A. |
-| 2 | Mengira data mentah harus diagregasi sendiri | Salah arah | Sumber utama dashboard = schema `datamart.*` (sudah berisi total siswa per tingkat/usia/agama, PTK per golongan/pendidikan/usia, rombel, dll). Query berat ke `dbo.*` hanya bila perlu. |
+| 1 | Menganggap `datamart` siap pakai | **Salah: `datamart` KOSONG (0 baris)** — terverifikasi dari dump | Database `backbone_client` **sudah punya role `analis`** (read-only, `GRANT SELECT` di semua schema). Tabel `datamart.*` **ada secara struktur tetapi belum diisi data**. Gunakan **schema kontrak `metrics`** yang dibangun dari `dbo`/`ref`, dengan jalur migrasi ke `datamart` saat terisi. Lihat §5 & Lampiran A. |
+| 2 | Mengira data mentah harus diagregasi sendiri | Sebagian benar | Karena `datamart` kosong, agregat sementara dibangun dari `dbo.*` + `ref.*` ke schema kontrak `metrics`. Dashboard **hanya** menempel ke `metrics.*`. Saat `datamart` terisi, cukup ganti sumber view kontrak. |
 | 3 | Aktivasi **"Public Embedding" + "Signed Embedding"** untuk VIP | Ambigu & berisiko | Ini dua hal berbeda. **Publik (tanpa token)** → hanya untuk konten non-sensitif. **VIP → Static/Guest Embedding dengan JWT bertanda tangan**. Jangan pernah menaruh data VIP di public embed. Lihat §7. |
 | 4 | Menyebut `firebase/php-jwt` untuk **"enkripsi token"** | Terminologi salah | JWT **ditandatangani (signed)**, bukan dienkripsi. Algoritma **HS256** dengan *Embedding Secret Key* Metabase. Lihat §7. |
 | 5 | Middleware mengubah `is_active=false` saat request | *Side-effect* pada operasi baca; rawan race | Middleware **hanya menolak akses**. Penonaktifan massal dilakukan **scheduler terjadwal**. |
@@ -82,8 +82,8 @@ Draft awal benar secara arah, tetapi memiliki **gap kritis** berikut. MasterPlan
         IFRAME /embed │          │         │
                      │          │  ┌──────▼─────────────────┐
                      │          │  │  PostgreSQL backbone_   │
-                     │          │  │  client  (datamart,     │
-                     │          │  │  dbo, ref, qc, sync)    │
+                     │          │  │  client  (metrics,     │
+                     │          │  │  datamart, dbo, ref)   │
                      │          │  └─────────────────────────┘
                      │          │
               ┌──────▼───────┐  │
@@ -103,30 +103,45 @@ Draft awal benar secara arah, tetapi memiliki **gap kritis** berikut. MasterPlan
 
 ## 5. Fase 1 — Data Layer (Database)
 
-**Tujuan:** memastikan sumber data siap, aman, dan terdokumentasi.
+**Tujuan:** menyediakan sumber data agregat yang siap, aman, dan **stabil menghadapi perubahan sumber**.
 
-### 5.1 Verifikasi aset existing (jangan bikin ulang)
+> **Konteks penting:** schema `datamart` **ada secara struktur tetapi KOSONG (0 baris)** pada dump saat ini. Diperkirakan akan terisi oleh job penarikan backbone Pusdatin pada jadwal berikutnya. Karena itu Fase 1 **tidak** boleh menempel langsung ke `datamart`; gunakan **lapisan kontrak `metrics`**.
+
+### 5.1 Verifikasi aset existing
 - [ ] Restore/inspeksi dump `backbone_client_*.dump` di lingkungan kerja.
 - [ ] Konfirmasi keberadaan schema: `datamart`, `dbo`, `ref`, `qc`, `sync`.
 - [ ] Konfirmasi role `analis` ada dan hanya punya `SELECT` (+ `USAGE` schema, `CONNECT`).
-- [ ] Konfirmasi 22 tabel `datamart.sekolah_*` berisi data (bukan kosong).
+- [ ] **Konfirmasi `datamart.*` kosong (0 baris)** pada dump saat ini.
+- [ ] Konfirmasi `dbo.*` berisi data (sumber agregasi sementara), mis. `dbo.peserta_didik`, `dbo.ptk`, `dbo.rombongan_belajar`.
 - [ ] Dokumentasikan tabel & maknanya ke `docs/data-dictionary.md` (Lampiran A sebagai titik awal).
 
 ### 5.2 Validasi akses read-only
 - [ ] Uji login sebagai `analis`, jalankan `SELECT` (harus sukses) dan `INSERT/UPDATE/DELETE/DDL` (harus **gagal**).
 - [ ] Jika `analis` belum ada di server produksi → minta Pusdatin membuatkannya dengan pola yang sama (jangan pakai superuser).
 
-### 5.3 Materialized View (kondisional, hanya jika perlu)
-- [ ] **Hindari** membuat MV baru bila `datamart.*` sudah mencukupi. MV baru hanya jika ada query analitik berat yang belum tercakup.
-- [ ] Jika membuat MV: wajib punya **UNIQUE INDEX** agar bisa `REFRESH MATERIALIZED VIEW CONCURRENTLY` (tanpa memblokir pembaca).
+### 5.3 Lapisan kontrak `metrics` (WAJIB)
+- [ ] Buat schema `metrics` berisi view/view materialized dengan **kontrak kolom tetap** (bentuk *long*): mis. `semester_id, kode_kecamatan, kecamatan, jenjang, jenis_kelamin, jumlah`.
+- [ ] Bangun view kontrak **dari `dbo.*` + `ref.*`** (karena `datamart` masih kosong).
+- [ ] Beri `analis` `SELECT` pada schema `metrics`.
+- [ ] **Metabase HANYA mereferensikan `metrics.*`** — bukan `dbo`/`datamart` langsung. Ini yang membuat dashboard tahan terhadap perubahan sumber data.
+- [ ] Simpan DDL view kontrak di repo: `database/sql/metrics_*.sql`.
+
+### 5.4 Jalur migrasi ke `datamart` (saat terisi)
+- [ ] Saat job Pusdatin mengisi `datamart`, ubah isi view kontrak menjadi `CREATE OR REPLACE VIEW metrics.v_... AS SELECT ... FROM datamart....`
+- [ ] Bentuk `datamart.*` adalah **wide** (kolom `_l`/`_p` per kategori, mis. `pd_tkt_1_l`, `ptk_guru_s1_p`) → lakukan **unpivot** ke bentuk *long* yang sudah ditetapkan kontrak.
+- [ ] **Nama & tipe kolom kontrak tidak boleh berubah** agar dashboard Metabase tidak perlu diutak-atik.
+- [ ] Tambahkan **test kesetaraan angka** (view dari `dbo` vs view dari `datamart`) sebelum cutover.
+
+### 5.5 Materialized View (kondisional)
+- [ ] Bila ada view kontrak yang berat: jadikan **Materialized View** + **UNIQUE INDEX** agar bisa `REFRESH MATERIALIZED VIEW CONCURRENTLY` (tanpa memblokir pembaca).
 - [ ] Simpan DDL MV di repo: `database/sql/mv_*.sql`.
 
-### 5.4 Refresh otomatis (kondisional)
-- [ ] Jika ada MV: buat skrip `refresh_mviews.sql` dan jadwalkan **setelah** proses sinkronisasi backbone Pusdatin selesai (koordinasi dengan Pusdatin; kemungkinan skrip `pg_cron` atau cron OS).
+### 5.6 Refresh otomatis (kondisional)
+- [ ] Buat skrip `refresh_mviews.sql` dan jadwalkan **setelah** proses sinkronisasi backbone Pusdatin selesai (koordinasi dengan Pusdatin; kemungkinan `pg_cron` atau cron OS).
 - [ ] Pastikan `REFRESH ... CONCURRENTLY` untuk MV yang dilayani ke pengguna.
 
-**Deliverable Fase 1:** `docs/data-dictionary.md`, hasil uji read-only, (opsional) DDL MV + skrip refresh.
-**DoD:** `analis` login, bisa baca `datamart`, tidak bisa tulis; data dictionary lengkap.
+**Deliverable Fase 1:** `docs/data-dictionary.md`, schema `metrics` + DDL view kontrak, hasil uji read-only, (opsional) DDL MV + skrip refresh.
+**DoD:** `analis` login, bisa baca `metrics`, tidak bisa tulis; view kontrak berisi angka agregat yang benar; data dictionary lengkap; prosedur migrasi ke `datamart` terdokumentasi.
 
 ---
 
@@ -142,7 +157,7 @@ Draft awal benar secara arah, tetapi memiliki **gap kritis** berikut. MasterPlan
 
 ### 6.2 Koneksi data
 - [ ] Tambah database tipe PostgreSQL: host backbone, DB `backbone_client`, user `analis`, **SSL aktif**.
-- [ ] Batasi akses ke schema `datamart`, `ref` (dan `dbo` hanya bila perlu). Aktifkan "Only these schemas".
+- [ ] Arahkan Metabase ke schema **`metrics` (kontrak)** — bukan langsung ke `dbo`/`datamart`. Aktifkan "Only these schemas" untuk `metrics` (+ `ref` bila perlu lookup).
 - [ ] Uji koneksi & query sample.
 
 ### 6.3 Dashboard
@@ -153,7 +168,7 @@ Draft awal benar secara arah, tetapi memiliki **gap kritis** berikut. MasterPlan
 ### 6.4 Cache & performa
 - [ ] Aktifkan **query caching** di Admin Metabase.
 - [ ] Untuk kartu berat: aktifkan cache/refresh terjadwal.
-- [ ] Pastikan dashboard memakai tabel `datamart` (bukan query berat ke `dbo`).
+- [ ] Pastikan dashboard memakai view kontrak `metrics.*` (bukan query berat langsung ke `dbo`).
 
 ### 6.5 Embedding settings
 - [ ] Aktifkan **Static embedding / Guest embedding** (Signed JWT) untuk dashboard VIP.
@@ -323,7 +338,8 @@ dashboard-karangasem/
 │  └─ Filament/Resources/UserResource.php
 ├─ config/metabase.php
 ├─ database/migrations/...
-├─ database/sql/mv_*.sql            (opsional)
+├─ database/sql/metrics_*.sql       (view kontrak — WAJIB)
+├─ database/sql/mv_*.sql            (opsional, bila pakai Materialized View)
 ├─ deploy/metabase/docker-compose.yml
 ├─ docs/
 │  ├─ data-dictionary.md
@@ -353,7 +369,7 @@ dashboard-karangasem/
 
 | Risiko | Dampak | Mitigasi |
 |---|---|---|
-| `analis`/`datamart` tidak ada di produksi | Fase 1 gagal | Verifikasi lebih awal; koordinasi Pusdatin |
+| `analis`/schema tidak ada di produksi, atau `datamart` tetap kosong | Fase 1 gagal / agregat tidak ada | Verifikasi lebih awal; bangun `metrics` dari `dbo/ref`; koordinasi Pusdatin untuk jadwal pengisian `datamart` |
 | Versi Filament/Laravel bentrok | Blokir | `--dry-run`, pin versi, siapkan fallback LTS |
 | PII bocor di dashboard | Hukum/privasi | Review kartu, larang kolom PII, review berkala |
 | Secret embed bocor | Akses tak sah | Env-only, rotasi, TTL pendek |
@@ -366,7 +382,7 @@ dashboard-karangasem/
 
 ## 15. Checklist Global (ringkas)
 
-- [ ] F1 Data layer & read-only terverifikasi
+- [ ] F1 Lapisan kontrak `metrics` dibangun dari `dbo/ref`; jalur migrasi ke `datamart` disiapkan
 - [ ] F2 Metabase + 2 dashboard + cache + secret
 - [ ] F3 Laravel 13 + Filament 5 + RBAC + middleware
 - [ ] F4 Signed embedding publik & VIP
@@ -383,11 +399,14 @@ dashboard-karangasem/
 ### Skema & isi
 | Skema | Isi | Dipakai dashboard? |
 |---|---|---|
-| `datamart` | **22 tabel agregat siap pakai** per sekolah/semester | **Ya (utama)** |
-| `dbo` | Data mentah (sekolah, peserta_didik, ptk, rombel, sarpras, akreditasi, dll) | Hanya bila perlu |
+| `metrics` | **Lapisan kontrak buatan kita** (view/view materialized) — bentuk *long*, kolom stabil | **Ya (utama)** |
+| `datamart` | **22 tabel agregat berstruktur, TAPI MASIH KOSONG (0 baris)** per sekolah/semester — belum diisi job Pusdatin | Ya (setelah terisi) |
+| `dbo` | Data mentah (sekolah, peserta_didik, ptk, rombel, sarpras, akreditasi, dll) | Sumber agregat sementara |
 | `ref` | Tabel referensi (agama, bentuk_pendidikan, wilayah, dll) | Ya (lookup) |
 | `qc` | Validasi kualitas data | Tidak |
 | `sync` | Log & checkpoint sinkronisasi backbone | Tidak |
+
+> **Catatan:** dashboard **selalu** menempel ke `metrics.*`. Sumber `metrics` mula-mula `dbo/ref` (karena `datamart` kosong), lalu dialihkan ke `datamart` saat terisi — tanpa mengubah dashboard.
 
 ### 22 tabel `datamart` (semua ber-ciiri: `sekolah_id, semester_id, npsn, nama, bentuk_pendidikan, status_sekolah, kode_wilayah, provinsi/kabupaten/kecamatan + kolom agregat`)
 - Peserta didik: `tingkat`, `usia`, `agama`, `baru_usia`, `lulus_usia`, `mengulang`, `mengulang_usia`
@@ -404,6 +423,7 @@ dashboard-karangasem/
 - Format: `PGDMP` v1.15-0, PostgreSQL 16.15.
 - 130 `PRIMARY KEY`, **0 foreign key** (integritas aplikatif, bukan constraint).
 - **Tidak ada index eksplisit** dan tidak ada fungsi/trigger khusus pada dump ini → andalkan PK; tambah index hanya jika terbukti perlu.
+- **`datamart` kosong (0 baris)**: seluruh `COPY datamart.*` langsung diikuti terminator `\.` (terverifikasi via `pg_restore --data-only`). Sebaliknya `dbo.*` berisi data, mis. `dbo.peserta_didik` 80.311 baris, `dbo.ptk` 8.012 baris, `dbo.rombongan_belajar` 5.077 baris, `dbo.anggota_rombel` 97.758 baris.
 
 ---
 
