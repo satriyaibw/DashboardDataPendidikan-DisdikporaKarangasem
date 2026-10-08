@@ -15,6 +15,7 @@
 *.dump
 *.sql.gz
 *.sql
+!database/sql/**/*.sql
 
 # Laravel runtime
 /storage/*.key

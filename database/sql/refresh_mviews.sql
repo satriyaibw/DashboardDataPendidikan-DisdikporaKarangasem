@@ -1,0 +1,16 @@
+-- ============================================================================
+-- Fase 1 §5.6 — Skrip refresh Materialized View di schema `metrics`
+--
+-- Saat ini kosong karena belum ada MV (view kontrak ringan — lihat README).
+-- Saat MV dibuat (`database/sql/mv_*.sql`), tambahkan satu baris:
+--     REFRESH MATERIALIZED VIEW CONCURRENTLY metrics.<nama_mv>;
+-- Syarat CONCURRENTLY (PostgreSQL 16):
+--   * MV sudah terisi (WITH DATA saat CREATE)
+--   * Ada UNIQUE INDEX murni kolom (bukan expression, tanpa WHERE)
+-- Jadwalkan SETELAH job sinkronisasi backbone Pusdatin selesai
+-- (pg_cron atau cron OS), koordinasi dengan Pusdatin.
+-- ============================================================================
+
+-- REFRESH MATERIALIZED VIEW CONCURRENTLY metrics.mv_peserta_didik;
+-- REFRESH MATERIALIZED VIEW CONCURRENTLY metrics.mv_rombongan_belajar;
+-- REFRESH MATERIALIZED VIEW CONCURRENTLY metrics.mv_ptk;
