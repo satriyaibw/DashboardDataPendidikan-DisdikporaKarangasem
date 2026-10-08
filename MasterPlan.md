@@ -156,13 +156,15 @@ Draft awal benar secara arah, tetapi memiliki **gap kritis** berikut. MasterPlan
 - [ ] Akses Metabase hanya dari jaringan internal/VPN (bind ke localhost/reverse proxy), kecuali endpoint embed.
 
 ### 6.2 Koneksi data
-- [ ] Tambah database tipe PostgreSQL: host backbone, DB `backbone_client`, user `analis`, **SSL aktif**.
-- [ ] Arahkan Metabase ke schema **`metrics` (kontrak)** — bukan langsung ke `dbo`/`datamart`. Aktifkan "Only these schemas" untuk `metrics` (+ `ref` bila perlu lookup).
+- [ ] Tambah **1 koneksi database** tipe PostgreSQL:
+  - **Koneksi (`backbone_admin`)**: host backbone, DB `backbone_client`, user `admin_full`, **SSL aktif**, query native **YA**. Untuk semua dashboard (Publik, VIP, Admin).
+- [ ] Arahkan Metabase ke semua schema (`dbo`, `ref`, `datamart`, `metrics`) — admin bisa query native ke semua schema.
 - [ ] Uji koneksi & query sample.
 
 ### 6.3 Dashboard
 - [ ] Susun **Dashboard Publik** (`PUBLIC_DASHBOARD_ID`): hanya agregat non-sensitif (mis. jumlah sekolah, jumlah siswa per kecamatan, rasio guru/murid). Tanpa PII.
-- [ ] Susun **Dashboard VIP** (`VIP_DASHBOARD_ID`): analitik lebih dalam (usia, golongan, pendidikan, rombel, kelulusan, dll). Tetap **tanpa PII**.
+- [ ] Susun **Dashboard VIP** (`VIP_DASHBOARD_ID`): analitik lebih dalam (usia, golongan, pendidikan, rombel, kelulusan, dll) + akses PII. User VIP **tidak bisa query native**, hanya bisa lihat/filter/download grafik.
+- [ ] Susun **Dashboard Admin** (`ADMIN_DASHBOARD_ID`): full view, query native ke `dbo.*` untuk verifikasi/troubleshooting. Read-only (no DELETE/EDIT).
 - [ ] Catat ID dashboard + ID pertanyaan penting → `docs/metabase-ids.md`.
 
 ### 6.4 Cache & performa
@@ -176,8 +178,15 @@ Draft awal benar secara arah, tetapi memiliki **gap kritis** berikut. MasterPlan
 - [ ] Salin *Embedding Secret Key* ke env Laravel (`METABASE_EMBEDDING_SECRET`).
 - [ ] Catat *Site URL* Metabase (`METABASE_SITE_URL`).
 
-**Deliverable Fase 2:** Metabase jalan, 2 dashboard, env secret, `docs/metabase-ids.md`.
-**DoD:** keduanya dapat dibuka; VIP dashboard berhasil ditoken (uji cepat dengan skrip); caching aktif.
+### 6.6 Role & Akses (3 Role)
+- [ ] **Admin** (`admin_full`): full view, query native ke `dbo.*`, read-only (no DELETE/EDIT). Bisa lihat semua data termasuk PII.
+- [ ] **VIP**: bisa lihat PII melalui dashboard VIP yang disiapkan admin. **Tidak bisa query native**, hanya bisa lihat/filter/download grafik.
+- [ ] **Public**: hanya agregat, tanpa PII, tanpa data detail. Hanya bisa melihat dashboard Publik yang disiapkan admin.
+
+**Kontrol akses dilakukan melalui permission per dashboard/collection, bukan per koneksi database.**
+
+**Deliverable Fase 2:** Metabase jalan, 3 dashboard, env secret, `docs/metabase-ids.md`.
+**DoD:** ketiganya dapat dibuka; VIP dashboard berhasil ditoken (uji cepat dengan skrip); caching aktif.
 
 ---
 
@@ -383,7 +392,7 @@ dashboard-karangasem/
 ## 15. Checklist Global (ringkas)
 
 - [ ] F1 Lapisan kontrak `metrics` dibangun dari `dbo/ref`; jalur migrasi ke `datamart` disiapkan
-- [ ] F2 Metabase + 2 dashboard + cache + secret
+- [ ] F2 Metabase + 3 dashboard + cache + secret
 - [ ] F3 Laravel 13 + Filament 5 + RBAC + middleware
 - [ ] F4 Signed embedding publik & VIP
 - [ ] F5 Privasi/keamanan/hardening

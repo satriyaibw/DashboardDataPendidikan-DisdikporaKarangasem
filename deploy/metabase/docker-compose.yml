@@ -1,0 +1,90 @@
+# ============================================================================
+# Fase 2 — Metabase OSS + PostgreSQL Metadata
+#
+# Spesifikasi: MasterPlan.md §6, Issue #3
+# - Metabase terhubung read-only ke backbone_client (role `admin_full`, SSL aktif)
+# - Query native ke semua schema (`dbo`, `ref`, `datamart`, `metrics`)
+# - 3 dashboard: Publik (non-sensitif), VIP (termasuk PII), Admin (full view)
+# - Query caching dikonfigurasi per dashboard/pertanyaan (Admin → Caching)
+# - Siap untuk Guest/Static Embedding (JWT HS256)
+#
+# Cara pakai:
+#   1. cp .env.example .env
+#   2. Isi nilai nyata (jangan commit .env)
+#   3. docker compose up -d
+#   4. Buka http://localhost:3000
+# ============================================================================
+
+services:
+  metabase:
+    image: metabase/metabase:v0.55.4  # Pin versi stabil (jangan latest di produksi)
+    container_name: metabase
+    hostname: metabase
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"  # Bind ke localhost (akses via reverse proxy/VPN)
+    environment:
+      # --- Metadata database (PostgreSQL terpisah) ---
+      MB_DB_TYPE: postgres
+      MB_DB_HOST: postgres
+      MB_DB_PORT: "5432"
+      MB_DB_DBNAME: ${METABASE_MB_DB_DBNAME:-metabase}
+      MB_DB_USER: ${METABASE_MB_DB_USER:-metabase}
+      MB_DB_PASS: ${METABASE_MB_DB_PASS:?MB_DB_PASS harus diisi di .env}
+
+      # --- Embedding Secret (min. 32 karakter, generate: openssl rand -hex 32) ---
+      MB_EMBEDDING_SECRET_KEY: ${METABASE_MB_EMBEDDING_SECRET_KEY:?MB_EMBEDDING_SECRET_KEY harus diisi di .env}
+
+      # --- Encryption key untuk kredensial koneksi DB di metadata (min. 16 karakter) ---
+      # Generate: openssl rand -base64 32. PENTING: jangan hilang/diubah setelah di-set,
+      # atau semua kredensial koneksi harus di-set ulang di Admin Panel.
+      MB_ENCRYPTION_SECRET_KEY: ${METABASE_MB_ENCRYPTION_SECRET_KEY:?METABASE_MB_ENCRYPTION_SECRET_KEY harus diisi di .env}
+
+      # --- Site URL (untuk embed & public link) ---
+      MB_SITE_URL: ${METABASE_SITE_URL:-http://localhost:3000}
+
+      # --- Locale (default bahasa UI) ---
+      MB_APPLICATION_NAME: "Dashboard Pendidikan Karangasem"
+      MB_SITE_LOCALE: id  # Bahasa Indonesia (default instance, user bisa override)
+
+    volumes:
+      # Metadata Metabase disimpan di PostgreSQL terpisah (lihat service `postgres`).
+      # Tidak perlu volume /metabase.db karena MB_DB_TYPE=postgres (bukan H2).
+      - /dev/urandom:/dev/random:ro  # Entropy untuk kriptografi
+
+    networks:
+      - metanet
+
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "-I", "http://localhost:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 120s  # First-boot migrasi app DB bisa memakan waktu menit
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: metabase_postgres
+    hostname: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${METABASE_MB_DB_DBNAME:-metabase}
+      POSTGRES_USER: ${METABASE_MB_DB_USER:-metabase}
+      POSTGRES_PASSWORD: ${METABASE_MB_DB_PASS:?POSTGRES_PASSWORD harus diisi di .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - metanet
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${METABASE_MB_DB_USER:-metabase} -d ${METABASE_MB_DB_DBNAME:-metabase}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  metanet:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local

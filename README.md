@@ -36,3 +36,14 @@ Rencana dan implementasi **Dashboard Data Pendidikan Kabupaten Karangasem**.
   (hasil agregat kecil); bila kelak lambat, buat `mv_*.sql` dengan UNIQUE
   INDEX agar `REFRESH ... CONCURRENTLY` valid (lihat MasterPlan §5.5).
 
+## Fase 2 — Metabase (Status: SELESAI)
+
+- Metabase OSS + PostgreSQL metadata via Docker Compose (`deploy/metabase/docker-compose.yml`).
+- 1 koneksi database: `backbone_admin` (admin_full, query native ke semua schema).
+- 3 role akses:
+  - **Admin**: full view, query native, read-only (no DELETE/EDIT).
+  - **VIP**: lihat PII melalui dashboard VIP yang disiapkan admin, tidak bisa query native.
+  - **Public**: agregat saja, tanpa PII.
+- Role admin: `database/sql/admin_full_role.sql`.
+- Dokumentasi: `docs/metabase-ids.md`.
+
