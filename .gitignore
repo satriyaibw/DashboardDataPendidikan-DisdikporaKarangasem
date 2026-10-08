@@ -1,0 +1,31 @@
+# Dependencies
+/vendor
+/node_modules
+
+# Build artifacts
+/public/build
+/public/hot
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# Database dumps & data (mengandung PII)
+*.dump
+*.sql.gz
+*.sql
+
+# Laravel runtime
+/storage/*.key
+/storage/framework/cache/data/*
+/storage/logs/*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.obsidian/
+
+# IDE
+.idea/
+.vscode/
