@@ -55,7 +55,8 @@ class VipAccessTest extends TestCase
     public function test_non_vip_role_is_rejected(): void
     {
         $user = User::factory()->create(['is_active' => true]);
-        $this->actingAs($user)->get('/vip/dashboard')->assertForbidden();
+        $this->actingAs($user)->get('/vip/dashboard')->assertRedirect('/login');
+        $this->assertGuest();
     }
 
     public function test_non_admin_cannot_access_admin_panel(): void
@@ -73,10 +74,32 @@ class VipAccessTest extends TestCase
 
     public function test_login_rate_limiting_is_enforced(): void
     {
-        for ($i = 0; $i < 6; $i++) {
+        for ($i = 0; $i < 5; $i++) {
             $this->post('/vip/login', ['email' => 'x@example.com', 'password' => 'wrong']);
         }
+        // Attempt ke-6 ditolak oleh RateLimiter (bukan throttle route)
         $this->post('/vip/login', ['email' => 'x@example.com', 'password' => 'wrong'])
-            ->assertStatus(429);
+            ->assertRedirect()
+            ->assertSessionHasErrors('email');
+    }
+
+    public function test_vip_user_can_login_and_reach_dashboard(): void
+    {
+        $user = $this->vipUser(['expires_at' => now()->addDays(10)]);
+
+        $this->post('/vip/login', ['email' => $user->email, 'password' => 'password'])
+            ->assertRedirect('/vip/dashboard');
+
+        $this->assertAuthenticatedAs($user);
+    }
+
+    public function test_non_vip_user_login_is_rejected(): void
+    {
+        $user = User::factory()->create();
+
+        $this->post('/vip/login', ['email' => $user->email, 'password' => 'password'])
+            ->assertSessionHasErrors('email');
+
+        $this->assertGuest();
     }
 }

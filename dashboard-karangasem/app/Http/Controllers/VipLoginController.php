@@ -39,6 +39,20 @@ class VipLoginController extends Controller
         RateLimiter::clear($key);
         $request->session()->regenerate();
 
+        $user = Auth::user();
+
+        if (! $user->hasRole('vip') || $user->is_active !== true || ($user->expires_at !== null && $user->expires_at->isPast())) {
+            Auth::logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            RateLimiter::hit($key, 60);
+
+            throw ValidationException::withMessages([
+                'email' => 'Akun Anda tidak memiliki akses VIP yang aktif.',
+            ]);
+        }
+
         return redirect()->intended('/vip/dashboard');
     }
 

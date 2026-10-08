@@ -7,10 +7,10 @@ use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Spatie\Permission\Models\Role;
 
 class UsersTable
 {
@@ -41,7 +41,7 @@ class UsersTable
             ->filters([
                 SelectFilter::make('role')
                     ->label('Role')
-                    ->options(fn () => \Spatie\Permission\Models\Role::pluck('name', 'name')->all())
+                    ->options(fn () => Role::pluck('name', 'name')->all())
                     ->query(fn (Builder $query, array $data) => $query->when(
                         $data['value'] ?? null,
                         fn (Builder $q, $role) => $q->whereHas('roles', fn (Builder $r) => $r->where('name', $role))

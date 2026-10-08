@@ -19,7 +19,7 @@ class UserForm
                 TextInput::make('password')
                     ->password()
                     ->revealable()
-                    ->dehydrateStateUsing(fn (?string $state): ?string => filled($state) ? bcrypt($state) : null)
+                    ->dehydrateStateUsing(fn (?string $state): ?string => filled($state) ? $state : null)
                     ->dehydrated(fn (?string $state): bool => filled($state))
                     ->required(fn (string $operation): bool => $operation === 'create'),
                 DateTimePicker::make('expires_at')->nullable(),
