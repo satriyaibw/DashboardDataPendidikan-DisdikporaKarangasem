@@ -47,3 +47,29 @@ Rencana dan implementasi **Dashboard Data Pendidikan Kabupaten Karangasem**.
 - Role admin: `database/sql/admin_full_role.sql`.
 - Dokumentasi: `docs/metabase-ids.md`.
 
+
+## Fase 3 — Laravel + Filament (Status: SELESAI)
+
+- Project Laravel 13 di subdirektori `dashboard-karangasem/` (PHP 8.5, `composer.lock` ter-commit).
+- DB aplikasi terpisah `app_db` (user `app`, non-superuser); Laravel tidak menyentuh `backbone_client`.
+- Spatie Permission: role `admin` & `vip`; seeder admin awal (email/password dari env `ADMIN_EMAIL`/`ADMIN_PASSWORD`).
+- Filament 5 panel `/admin` dibatasi via `FilamentUser::canAccessPanel()` → role `admin`.
+- Kolom user: `expires_at` (index), `is_active`, `vip_notes`.
+- `UserResource`: CRUD user VIP, badge status Aktif/Kedaluwarsa/Nonaktif, action Perpanjang 30 hari & Aktif/Nonaktifkan, filter role & status.
+- Middleware `CheckVipAccess` (`check.vip`) pada grup `/vip/*`: login → role vip → is_active → expires_at null/>now; gagal → logout + redirect + pesan; tanpa tulis DB.
+- Login VIP custom minimal (`/login`, `/vip/login`, rate limit, throttle); health `GET /up`.
+- Feature tests T2–T8: `php artisan test` (10 passed).
+
+### Menjalankan (Docker / Laravel Sail)
+
+```bash
+cd dashboard-karangasem
+cp .env.example .env   # isi ADMIN_PASSWORD
+./vendor/bin/sail up -d --build
+./vendor/bin/sail artisan migrate --seed
+```
+
+- Web: http://localhost:8000 (`APP_PORT`), Postgres container di `localhost:5433` (`FORWARD_DB_PORT`).
+- Test: `./vendor/bin/sail artisan test`.
+- DB aplikasi: Postgres 18 container (service `pgsql`, db `app_db`, user `app`) — terpisah dari Postgres lokal backbone.
+- Tanpa Docker tetap bisa: `php artisan serve` dengan `DB_HOST=127.0.0.1` mengarah ke Postgres lokal.
