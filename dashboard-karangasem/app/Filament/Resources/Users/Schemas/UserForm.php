@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Users\Schemas;
 
+use App\Services\PasswordPolicy;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -19,6 +20,16 @@ class UserForm
                 TextInput::make('password')
                     ->password()
                     ->revealable()
+                    ->rule(
+                        PasswordPolicy::rule(),
+                        // Aturan hanya berlaku bila password diisi: Registry
+                        // edit boleh dikosongkan agar password lama tetap.
+                        fn (?string $state): bool => filled($state),
+                    )
+                    ->validationMessages(PasswordPolicy::MESSAGES)
+                    // Tidak ada Hash::make() manual: model User memakai cast
+                    // 'password' => 'hashed' yang menghash sekali dan idempoten
+                    // (Hash::isHashed() menjaga agar tidak ter-hash ganda).
                     ->dehydrateStateUsing(fn (?string $state): ?string => filled($state) ? $state : null)
                     ->dehydrated(fn (?string $state): bool => filled($state))
                     ->required(fn (string $operation): bool => $operation === 'create'),
