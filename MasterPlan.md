@@ -237,8 +237,8 @@ Draft awal benar secara arah, tetapi memiliki **gap kritis** berikut. MasterPlan
 **Tujuan:** halaman publik & VIP menampilkan dashboard Metabase dengan aman.
 
 ### 8.1 Konfigurasi
-- [ ] `composer require firebase/php-jwt:^6`.
-- [ ] Tambah `config/metabase.php` + `.env`:
+- [x] `composer require firebase/php-jwt:^7.2` — **catatan:** MasterPlan aslinya menyebut `^6`, tetapi Packagist menandai seluruh versi `<7.0.0` memiliki security advisory (PKSA-y2cr-5h3j-g3ys). v7.2.1 dipilih karena kompatibel dengan Laravel 13 (PHP ^8.3) dan API `JWT::encode/decode` + exception identik.
+- [x] Tambah `config/metabase.php` + `.env`:
   - `METABASE_SITE_URL`
   - `METABASE_EMBEDDING_SECRET`
   - `METABASE_PUBLIC_DASHBOARD_ID`
@@ -246,26 +246,27 @@ Draft awal benar secara arah, tetapi memiliki **gap kritis** berikut. MasterPlan
   - `METABASE_EMBED_TTL` (default 600 detik / 10 menit)
 
 ### 8.2 Service `MetabaseEmbedService`
-- [ ] Method `publicUrl(): string` → URL public embed (`/public/dashboard/<id>`).
-- [ ] Method `signedUrl(array $params = []): string`:
+- [x] Method `publicUrl(): string` → URL public embed (`/public/dashboard/<id>`).
+- [x] Method `signedUrl(array $params = []): string`:
   - Payload: `{ "resource": { "dashboard": <id> }, "params": {...}, "exp": now+ttl }`
   - Sign **HS256** dengan `METABASE_EMBEDDING_SECRET`.
   - URL: `{SITE_URL}/embed/dashboard/{token}#bordered=true&titled=true`
-- [ ] **Jangan** log token. **Jangan** kirim secret ke frontend.
+- [x] **Jangan** log token. **Jangan** kirim secret ke frontend.
 
 ### 8.3 Routes & Controller
-- [ ] `GET /` → halaman publik (jika ada) memuat iframe public embed.
-- [ ] `GET /vip/dashboard` → `auth` + `check.vip` + `role:vip` → hitung `signedUrl()` → kirim ke Blade.
-- [ ] Blade: `<iframe src="{{ $embedUrl }}" ...>` dengan `loading="lazy"`, `referrerpolicy`, dan `title` aksesibel.
+- [x] `GET /` → halaman publik memuat iframe public embed (`PublicController@index`, view `public.dashboard`).
+- [x] `GET /vip/dashboard` → `auth` + `role:vip` + `check.vip` (urutan `role:vip` lebih dulu agar user non-VIP dapat 403, bukan redirect) → `signedUrl()` → Blade.
+- [x] Blade: `<iframe src="{{ $embedUrl }}" ...>` dengan `loading="lazy"`, `referrerpolicy`, dan `title` aksesibel.
+- [x] `GET /vip/embed-url` → JSON `{ "embed_url": ... }` + `Cache-Control: no-store` untuk refresh token tanpa reload.
 
 ### 8.4 Keamanan embed
-- [ ] `Content-Security-Policy: frame-src {METABASE_SITE_URL}`.
-- [ ] Metabase: hanya endpoint `/embed/dashboard/*` yang boleh di-iframe; aktifkan `X-Frame-Options: SAMEORIGIN`/`ALLOW-FROM` seperlunya.
-- [ ] Token TTL pendek (±10 menit) + halaman VIP memuat ulang token bila perlu (endpoint `GET /vip/embed-url` JSON untuk refresh tanpa reload penuh).
+- [x] `Content-Security-Policy: frame-src 'self' {origin Metabase}` — per-rute via alias `metabase.csp` (rute `/`, `/vip/dashboard`, `/vip/embed-url`), tidak pernah global.
+- [ ] Metabase: hanya endpoint `/embed/dashboard/*` yang boleh di-iframe; aktifkan `X-Frame-Options: SAMEORIGIN`/`ALLOW-FROM` seperlunya. *(koordinasi sisi Metabase — Fase 2/5)*
+- [x] Token TTL pendek (±10 menit) + halaman VIP memuat ulang token via polling `/vip/embed-url` (interval ±80% TTL, gagal-fetch ditangani diam).
 
 ### 8.5 Uji token
-- [ ] Unit test payload & signature.
-- [ ] Uji negatif: token kedaluwarsa / secret salah → Metabase menolak.
+- [x] Unit test payload & signature (`tests/Unit/MetabaseEmbedServiceTest.php` — decode OK, `params` kosong → `{}`, `exp` tepat).
+- [x] Uji negatif: token kedaluwarsa (`ExpiredException`) / secret salah (`SignatureInvalidException`) — `tests/Feature/VipDashboardTest.php` menutup jalur HTTP (T-15…T-19 + CSP + `/admin` tak terpengaruh).
 
 **Deliverable Fase 4:** halaman publik & VIP tampil; unit test embed lulus.
 **DoD:** VIP aktif melihat dashboard; token tidak pernah bocor ke klien/log.

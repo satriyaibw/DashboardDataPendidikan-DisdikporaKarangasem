@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\CheckVipAccess;
+use App\Http\Middleware\MetabaseCspHeaders;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -16,11 +17,25 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Percaya pada header X-Forwarded-* hanya dari proxy yang dikonfigurasi
+        // eksplisit (TRUSTED_PROXIES, daftar dipisah koma). Default kosong: tanpa
+        // proxy terpercaya IP pengguna diambil dari REMOTE_ADDR, sehingga tidak
+        // bisa dipalsukan lewat header — penting karena rate limit login
+        // mengunci berdasarkan IP.
+        $trustedProxies = array_filter(
+            array_map('trim', explode(',', (string) env('TRUSTED_PROXIES', '')))
+        );
+
+        if ($trustedProxies !== []) {
+            $middleware->trustProxies(at: $trustedProxies);
+        }
+
         $middleware->alias([
             'role' => RoleMiddleware::class,
             'permission' => PermissionMiddleware::class,
             'role_or_permission' => RoleOrPermissionMiddleware::class,
             'check.vip' => CheckVipAccess::class,
+            'metabase.csp' => MetabaseCspHeaders::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
