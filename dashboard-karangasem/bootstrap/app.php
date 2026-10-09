@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\CheckVipAccess;
 use App\Http\Middleware\MetabaseCspHeaders;
+use App\Http\Middleware\SecurityHeaders;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -37,6 +38,12 @@ return Application::configure(basePath: dirname(__DIR__))
             'check.vip' => CheckVipAccess::class,
             'metabase.csp' => MetabaseCspHeaders::class,
         ]);
+
+        // Header keamanan global (nosniff, Referrer-Policy, Permissions-Policy,
+        // COOP, X-Frame-Options). CSP sengaja tidak dipasang di sini: CSP
+        // dikelola per-rute oleh MetabaseCspHeaders agar skrip inline panel
+        // Filament tetap berjalan.
+        $middleware->append(SecurityHeaders::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

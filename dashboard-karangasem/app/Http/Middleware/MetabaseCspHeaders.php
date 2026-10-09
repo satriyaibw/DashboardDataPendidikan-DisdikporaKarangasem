@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\MetabaseOrigin;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -37,46 +38,12 @@ class MetabaseCspHeaders
     {
         $frameSources = ["'self'"];
 
-        $origin = $this->metabaseOrigin();
+        $origin = MetabaseOrigin::fromConfiguration();
 
         if ($origin !== null) {
             $frameSources[] = $origin;
         }
 
         return 'frame-src '.implode(' ', $frameSources).'; '.self::BASE_DIRECTIVES;
-    }
-
-    /**
-     * Origin Metabase (skema + host + port non-default, tanpa path) dari
-     * METABASE_SITE_URL. Mengembalikan null bila URL tidak dapat dipercaya.
-     */
-    protected function metabaseOrigin(): ?string
-    {
-        $siteUrl = (string) config('metabase.site_url');
-
-        if ($siteUrl === '') {
-            return null;
-        }
-
-        $parts = parse_url($siteUrl);
-
-        if ($parts === false || ! isset($parts['scheme'], $parts['host'])
-            || ! in_array(strtolower($parts['scheme']), ['http', 'https'], true)) {
-            return null;
-        }
-
-        $origin = strtolower($parts['scheme']).'://'.strtolower($parts['host']);
-
-        if (isset($parts['port']) && ! $this->isDefaultPort(strtolower($parts['scheme']), (int) $parts['port'])) {
-            $origin .= ':'.$parts['port'];
-        }
-
-        return $origin;
-    }
-
-    protected function isDefaultPort(string $scheme, int $port): bool
-    {
-        return ($scheme === 'http' && $port === 80)
-            || ($scheme === 'https' && $port === 443);
     }
 }
