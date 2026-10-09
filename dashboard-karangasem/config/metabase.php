@@ -32,4 +32,25 @@ return [
     // Nilai <= 0 akan menghasilkan token yang langsung kedaluwarsa dan
     // menonaktifkan refresh otomatis pada halaman VIP.
     'embed_ttl' => (int) env('METABASE_EMBED_TTL', 600),
+
+    // ID dashboard admin (opsional). Tidak di-embed oleh aplikasi; dipakai
+    // `artisan security:scan-pii` bila ingin ikut diperiksa.
+    'admin_dashboard_id' => env('METABASE_ADMIN_DASHBOARD_ID'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Kredensial Admin Metabase (hanya untuk skrip verifikasi)
+    |--------------------------------------------------------------------------
+    |
+    | Dipakai `artisan security:scan-pii` untuk login ke API Metabase agar
+    | dapat membaca definisi kartu. Session id yang dihasilkan hanya disimpan
+    | di memori: tidak pernah dicetak, ditulis ke log, atau masuk laporan.
+    |
+    | Metabase API memakai field `username`; isi dengan email admin.
+    |
+    */
+
+    'admin_email' => env('METABASE_ADMIN_EMAIL'),
+
+    'admin_password' => env('METABASE_ADMIN_PASSWORD'),
 ];
