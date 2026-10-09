@@ -74,6 +74,16 @@ jobs:
     name: Tests
     runs-on: ubuntu-latest
 
+    # Hanya DB_PASSWORD yang perlu di-set di sini: phpunit.xml sudah memaksa
+    # DB_CONNECTION, DB_HOST, DB_PORT, DB_DATABASE, dan DB_USERNAME, tetapi
+    # sengaja tidak memuat DB_PASSWORD (nilainya dihapus dari repo agar tidak
+    # ada kredensial ter-commit). Bila tidak di-set, aplikasi memakai
+    # DB_PASSWORD=changeme dari .env.example dan Postgres menolaknya dengan
+    # "password authentication failed". Laravel Dotenv bersifat immutable,
+    # jadi variabel environment ini menang atas nilai di .env.
+    env:
+      DB_PASSWORD: secret
+
     # phpunit.xml memaksa DB_HOST=pgsql, DB_PORT=5432 dan DB_CONNECTION=pgsql
     # (nilai itu benar saat aplikasi berjalan di Sail). Karena <env> phpunit
     # menimpa variabel environment, nama host `pgsql` dipetakan ke 127.0.0.1
