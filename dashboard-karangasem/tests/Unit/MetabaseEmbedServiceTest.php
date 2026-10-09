@@ -7,6 +7,7 @@ use Firebase\JWT\ExpiredException;
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
 use Firebase\JWT\SignatureInvalidException;
+use InvalidArgumentException;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -36,6 +37,15 @@ class MetabaseEmbedServiceTest extends TestCase
     protected function extractToken(string $signedUrl): string
     {
         return basename((string) parse_url($signedUrl, PHP_URL_PATH));
+    }
+
+    /**
+     * Decode token dengan secret milik service — pengujian tidak pernah memakai
+     * helper dekode di kode produksi.
+     */
+    protected function decodeToken(string $token): object
+    {
+        return JWT::decode($token, new Key('test-secret-yang-cukup-panjang-minimal-32-karakter', 'HS256'));
     }
 
     public function test_public_url_points_to_public_dashboard_without_token(): void
@@ -70,7 +80,7 @@ class MetabaseEmbedServiceTest extends TestCase
 
         $this->assertSame(3, count(explode('.', $token)));
 
-        $payload = $this->service()->decodeToken($token);
+        $payload = $this->decodeToken($token);
 
         $this->assertSame(4, $payload->resource->dashboard);
         $this->assertSame('{}', json_encode($payload->params));
@@ -81,7 +91,7 @@ class MetabaseEmbedServiceTest extends TestCase
     {
         $token = $this->extractToken($this->service()->signedUrl(['kec' => 'Karangasem']));
 
-        $payload = $this->service()->decodeToken($token);
+        $payload = $this->decodeToken($token);
 
         $this->assertSame('Karangasem', $payload->params->kec);
     }
@@ -103,7 +113,7 @@ class MetabaseEmbedServiceTest extends TestCase
 
         $this->expectException(ExpiredException::class);
 
-        $this->service()->decodeToken($token);
+        $this->decodeToken($token);
     }
 
     public function test_signed_url_throws_when_embedding_secret_is_missing(): void
@@ -131,5 +141,71 @@ class MetabaseEmbedServiceTest extends TestCase
         $this->expectException(RuntimeException::class);
 
         $this->service()->publicUrl();
+    }
+
+    public function test_signed_url_throws_when_site_url_is_not_configured(): void
+    {
+        config(['metabase.site_url' => null]);
+
+        $this->expectException(RuntimeException::class);
+
+        $this->service()->signedUrl();
+    }
+
+    public function test_signed_url_rejects_site_url_without_absolute_http_scheme(): void
+    {
+        config(['metabase.site_url' => 'metabase.test']);
+
+        $this->expectException(RuntimeException::class);
+
+        $this->service()->signedUrl();
+    }
+
+    public function test_signed_url_rejects_site_url_with_non_http_scheme(): void
+    {
+        config(['metabase.site_url' => 'javascript:alert(1)']);
+
+        $this->expectException(RuntimeException::class);
+
+        $this->service()->signedUrl();
+    }
+
+    public function test_signed_url_rejects_site_url_containing_credentials(): void
+    {
+        config(['metabase.site_url' => 'https://user:secret@metabase.test']);
+
+        $this->expectException(RuntimeException::class);
+
+        $this->service()->signedUrl();
+    }
+
+    public function test_signed_url_throws_when_embedding_secret_is_too_short(): void
+    {
+        config(['metabase.embedding_secret' => 'terlalu-pendek']);
+
+        $this->expectException(RuntimeException::class);
+
+        $this->service()->signedUrl();
+    }
+
+    public function test_signed_url_rejects_params_that_are_not_scalar(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        $this->service()->signedUrl(['kec' => ['bersarang' => ['lewat']]]);
+    }
+
+    public function test_signed_url_rejects_empty_parameter_key(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        $this->service()->signedUrl(['' => 'Karangasem']);
+    }
+
+    public function test_signed_url_accepts_list_of_scalar_params(): void
+    {
+        $token = $this->extractToken($this->service()->signedUrl(['kec' => ['Karangasem', 'Rendang']]));
+
+        $this->assertSame(['Karangasem', 'Rendang'], array_values((array) $this->decodeToken($token)->params->kec));
     }
 }

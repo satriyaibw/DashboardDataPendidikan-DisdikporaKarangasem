@@ -17,9 +17,9 @@ class CheckVipAccess
             return redirect()->route('login')->withErrors(['email' => 'Silakan login terlebih dahulu.']);
         }
 
-        if (! $user->hasRole('vip')) {
-            return $this->logoutAndRedirect($request, 'Akun Anda tidak memiliki akses VIP.');
-        }
+        // Peran "vip" sudah diverifikasi middleware `role:vip` — urutannya sebelum
+        // middleware ini di routes/web.php, sehingga pengecekan ulang di sini
+        // sudah tidak pernah tercapai (dan hanya jadi jebakan kalau urutan berubah).
 
         if ($user->is_active !== true) {
             return $this->logoutAndRedirect($request, 'Akun Anda telah dinonaktifkan.');

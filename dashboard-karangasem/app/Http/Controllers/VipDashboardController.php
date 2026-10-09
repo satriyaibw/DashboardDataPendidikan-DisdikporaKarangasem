@@ -4,18 +4,25 @@ namespace App\Http\Controllers;
 
 use App\Services\MetabaseEmbedService;
 use Illuminate\Http\JsonResponse;
-use Illuminate\View\View;
+use Illuminate\Http\Response;
 
 class VipDashboardController extends Controller
 {
     /**
      * Halaman VIP dengan iframe signed embed Metabase (JWT HS256, TTL pendek).
+     *
+     * Header no-store wajib: halaman ini membawa token pada atribut src iframe,
+     * sehingga tidak boleh tersimpan di disk cache maupun back-forward cache.
      */
-    public function index(MetabaseEmbedService $metabase): View
+    public function index(MetabaseEmbedService $metabase): Response
     {
-        return view('vip.dashboard', [
+        return response()->view('vip.dashboard', [
             'embedUrl' => $metabase->signedUrl(),
+            'embedTtlSeconds' => $this->embedTtlSeconds(),
             'refreshIntervalSeconds' => $this->refreshIntervalSeconds(),
+        ])->withHeaders([
+            'Cache-Control' => 'no-store, private',
+            'X-Content-Type-Options' => 'nosniff',
         ]);
     }
 
@@ -26,16 +33,30 @@ class VipDashboardController extends Controller
     {
         return response()
             ->json(['embed_url' => $metabase->signedUrl()])
-            ->header('Cache-Control', 'no-store, private');
+            ->withHeaders([
+                'Cache-Control' => 'no-store, private',
+                'X-Content-Type-Options' => 'nosniff',
+            ]);
     }
 
     /**
-     * Interval polling (< TTL) agar iframe selalu memuat token yang masih valid.
+     * Interval polling maksimum (< TTL) agar iframe selalu memuat token yang
+     * masih valid. Mengembalikan 0 bila TTL tidak masuk akar sehingga view
+     * tidak menjadwalkan refresh sama sekali (menghindari loop 1 detik).
      */
     protected function refreshIntervalSeconds(): int
     {
-        $ttl = (int) config('metabase.embed_ttl', 600);
+        $ttl = $this->embedTtlSeconds();
 
-        return max(1, (int) floor($ttl * 0.8));
+        if ($ttl <= 0) {
+            return 0;
+        }
+
+        return $ttl > 1 ? (int) floor($ttl * 0.8) : 0;
+    }
+
+    protected function embedTtlSeconds(): int
+    {
+        return (int) config('metabase.embed_ttl', 600);
     }
 }

@@ -37,31 +37,124 @@
     <script>
         (function () {
             var frame = document.getElementById('vip-dashboard-frame');
-            var refreshIntervalMs = {{ $refreshIntervalSeconds }} * 1000;
             var endpoint = @json(route('vip.embed-url'));
+            var ttlSeconds = {{ $embedTtlSeconds }};
+            var refreshIntervalSeconds = {{ $refreshIntervalSeconds }};
 
-            if (!frame || refreshIntervalMs <= 0) {
+            // TTL tidak masuk akar: jangan jadwalkan refresh apa pun.
+            if (!frame || refreshIntervalSeconds <= 0) {
                 return;
             }
 
-            setInterval(function () {
-                if (document.visibilityState !== 'visible') {
+            // Sisa waktu sebelum token dianggap "hampir kedaluwarsa".
+            var safetyMarginSeconds = Math.max(15, Math.round(ttlSeconds * 0.05));
+
+            var timer = null;
+            var inFlight = null;
+
+            /**
+             * Baca klaim "exp" (detik UNIX) dari segmen payload JWT pada URL embed.
+             * Mengembalikan null bila token tidak dapat dibaca.
+             */
+            function tokenExpiry(url) {
+                var match = /\/embed\/dashboard\/([^?#]+)/.exec(url);
+
+                if (!match) {
+                    return null;
+                }
+
+                var segments = match[1].split('.');
+
+                if (segments.length !== 3) {
+                    return null;
+                }
+
+                // atob() menolak base64url tanpa padding.
+                var base64 = segments[1].replace(/-/g, '+').replace(/_/g, '/');
+
+                while (base64.length % 4 !== 0) {
+                    base64 += '=';
+                }
+
+                try {
+                    var payload = JSON.parse(atob(base64));
+
+                    return typeof payload.exp === 'number' ? payload.exp : null;
+                } catch (error) {
+                    return null;
+                }
+            }
+
+            /**
+             * Jeda sampai refresh berikutnya: paling lama satu kali polling penuh,
+             * dan dipercepat hanya bila token sudah mendekati kedaluwarsa. Dengan
+             * begitu iframe tidak dimuat ulang sebelum benar-benar diperlukan,
+             * sehingga pilihan filter pengguna di Metabase tetap terjaga.
+             */
+            function millisecondsUntilRefresh() {
+                var expiry = tokenExpiry(frame.src);
+
+                if (expiry === null) {
+                    return refreshIntervalSeconds * 1000;
+                }
+
+                return Math.min(
+                    refreshIntervalSeconds * 1000,
+                    Math.max(0, expiry * 1000 - Date.now() - safetyMarginSeconds * 1000)
+                );
+            }
+
+            function schedule() {
+                if (timer) {
+                    clearTimeout(timer);
+                }
+
+                // Jangan pernah polling lebih cepat dari satu detik.
+                timer = setTimeout(refresh, Math.max(1000, millisecondsUntilRefresh()));
+            }
+
+            function refresh() {
+                // Satu permintaan dijalankan pada satu waktu.
+                if (inFlight) {
                     return;
                 }
 
+                // Tab tersembunyi: tunda, jangan menumpuk permintaan token.
+                if (document.visibilityState !== 'visible') {
+                    schedule();
+                    return;
+                }
+
+                inFlight = new AbortController();
+
                 fetch(endpoint, {
                     headers: { 'Accept': 'application/json' },
-                    credentials: 'same-origin'
+                    credentials: 'same-origin',
+                    signal: inFlight.signal
                 }).then(function (response) {
                     return response.ok ? response.json() : null;
                 }).then(function (data) {
-                    if (data && data.embed_url) {
+                    inFlight = null;
+
+                    if (data && data.embed_url && data.embed_url !== frame.src) {
                         frame.src = data.embed_url;
                     }
+
+                    schedule();
                 }).catch(function () {
-                    // Diamkan: percobaan berikutnya pada interval berikutnya.
+                    inFlight = null;
+                    // Diamkan kegagalan; percobaan berikutnya pada jadwal berikutnya.
+                    schedule();
                 });
-            }, refreshIntervalMs);
+            }
+
+            document.addEventListener('visibilitychange', function () {
+                if (document.visibilityState === 'visible') {
+                    refresh();
+                }
+            });
+
+            schedule();
         })();
     </script>
 </body>

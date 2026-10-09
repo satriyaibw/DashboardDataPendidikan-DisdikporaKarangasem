@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use RuntimeException;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
@@ -42,6 +43,23 @@ class VipDashboardTest extends TestCase
             ->assertViewIs('public.dashboard')
             ->assertViewHas('embedUrl', 'https://metabase.test/public/dashboard/2')
             ->assertSee('/public/dashboard/2');
+    }
+
+    public function test_public_dashboard_links_to_the_vip_login_page(): void
+    {
+        $this->get('/')
+            ->assertOk()
+            ->assertSee(route('login'));
+    }
+
+    public function test_public_dashboard_fails_loudly_when_dashboard_id_is_missing(): void
+    {
+        config(['metabase.public_dashboard_id' => null]);
+
+        $this->withoutExceptionHandling();
+        $this->expectException(RuntimeException::class);
+
+        $this->get('/');
     }
 
     public function test_guest_is_redirected_to_login_from_vip_dashboard(): void
@@ -116,17 +134,56 @@ class VipDashboardTest extends TestCase
         $this->assertStringEndsWith('#bordered=true&titled=true', $embedUrl);
     }
 
+    public function test_vip_dashboard_page_is_not_cached_by_the_browser(): void
+    {
+        $this->actingAs($this->vipUser(['expires_at' => now()->addDays(10)]))
+            ->get('/vip/dashboard')
+            ->assertOk()
+            ->assertHeader('Cache-Control', 'no-store, private')
+            ->assertHeader('X-Content-Type-Options', 'nosniff');
+    }
+
+    public function test_embed_url_endpoint_is_rate_limited(): void
+    {
+        $user = $this->vipUser(['expires_at' => now()->addDays(10)]);
+
+        for ($attempt = 0; $attempt < 10; $attempt++) {
+            $this->actingAs($user)->getJson('/vip/embed-url')->assertOk();
+        }
+
+        $this->actingAs($user)->getJson('/vip/embed-url')->assertStatus(429);
+    }
+
     public function test_vip_routes_send_csp_header_allowing_metabase_origin(): void
     {
         $user = $this->vipUser(['expires_at' => now()->addDays(10)]);
 
         $this->actingAs($user)->get('/vip/dashboard')
             ->assertOk()
-            ->assertHeader('Content-Security-Policy', "frame-src 'self' https://metabase.test");
+            ->assertHeader('Content-Security-Policy', "frame-src 'self' https://metabase.test; object-src 'none'; base-uri 'self'; frame-ancestors 'none'");
 
         $this->actingAs($user)->get('/vip/embed-url')
             ->assertOk()
-            ->assertHeader('Content-Security-Policy', "frame-src 'self' https://metabase.test");
+            ->assertHeader('Content-Security-Policy', "frame-src 'self' https://metabase.test; object-src 'none'; base-uri 'self'; frame-ancestors 'none'");
+    }
+
+    public function test_vip_dashboard_disables_refresh_when_ttl_is_not_positive(): void
+    {
+        config(['metabase.embed_ttl' => 0]);
+
+        $this->actingAs($this->vipUser(['expires_at' => now()->addDays(10)]))
+            ->get('/vip/dashboard')
+            ->assertOk()
+            ->assertViewHas('refreshIntervalSeconds', 0);
+    }
+
+    public function test_vip_dashboard_refreshes_before_the_token_expires(): void
+    {
+        $this->actingAs($this->vipUser(['expires_at' => now()->addDays(10)]))
+            ->get('/vip/dashboard')
+            ->assertOk()
+            ->assertViewHas('refreshIntervalSeconds', 480)
+            ->assertViewHas('embedTtlSeconds', 600);
     }
 
     public function test_admin_panel_is_not_affected_by_metabase_csp_header(): void
