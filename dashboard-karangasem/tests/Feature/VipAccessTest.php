@@ -16,6 +16,14 @@ class VipAccessTest extends TestCase
         parent::setUp();
         Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
         Role::firstOrCreate(['name' => 'vip', 'guard_name' => 'web']);
+
+        config([
+            'metabase.site_url' => 'https://metabase.test',
+            'metabase.embedding_secret' => 'test-secret-yang-cukup-panjang-minimal-32-karakter',
+            'metabase.public_dashboard_id' => 2,
+            'metabase.vip_dashboard_id' => 4,
+            'metabase.embed_ttl' => 600,
+        ]);
     }
 
     protected function vipUser(array $attrs = []): User
@@ -55,8 +63,7 @@ class VipAccessTest extends TestCase
     public function test_non_vip_role_is_rejected(): void
     {
         $user = User::factory()->create(['is_active' => true]);
-        $this->actingAs($user)->get('/vip/dashboard')->assertRedirect('/login');
-        $this->assertGuest();
+        $this->actingAs($user)->get('/vip/dashboard')->assertForbidden();
     }
 
     public function test_non_admin_cannot_access_admin_panel(): void

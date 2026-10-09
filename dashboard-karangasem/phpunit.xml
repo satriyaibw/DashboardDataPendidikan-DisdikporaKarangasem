@@ -29,6 +29,11 @@
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
+        <env name="METABASE_SITE_URL" value="https://metabase.test"/>
+        <env name="METABASE_EMBEDDING_SECRET" value="test-secret-yang-cukup-panjang-minimal-32-karakter"/>
+        <env name="METABASE_PUBLIC_DASHBOARD_ID" value="2"/>
+        <env name="METABASE_VIP_DASHBOARD_ID" value="4"/>
+        <env name="METABASE_EMBED_TTL" value="600"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
