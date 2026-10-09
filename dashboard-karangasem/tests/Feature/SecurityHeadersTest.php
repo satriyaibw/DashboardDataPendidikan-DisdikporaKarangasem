@@ -3,7 +3,9 @@
 namespace Tests\Feature;
 
 use App\Http\Middleware\SecurityHeaders;
+use App\Http\Middleware\StrictTransportSecurity;
 use App\Models\User;
+use App\Providers\AppServiceProvider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -145,5 +147,64 @@ class SecurityHeadersTest extends TestCase
         $admin->assignRole('admin');
 
         $this->actingAs($admin)->get('/admin')->assertOk();
+    }
+
+    public function test_hsts_is_not_sent_for_plain_http_requests(): void
+    {
+        config(['app.hsts_enabled' => true]);
+
+        $this->assertFalse($this->strictTransportSecurityFor('http://dash.test/')->headers->has('Strict-Transport-Security'));
+    }
+
+    public function test_hsts_is_not_sent_when_it_is_disabled(): void
+    {
+        config(['app.hsts_enabled' => false]);
+
+        $this->assertFalse($this->strictTransportSecurityFor('https://dash.test/')->headers->has('Strict-Transport-Security'));
+    }
+
+    public function test_hsts_is_sent_for_secure_requests_when_enabled(): void
+    {
+        config(['app.hsts_enabled' => true]);
+
+        $response = $this->strictTransportSecurityFor('https://dash.test/');
+
+        $this->assertSame('max-age=31536000; includeSubDomains', $response->headers->get('Strict-Transport-Security'));
+    }
+
+    public function test_hsts_uses_the_configured_max_age(): void
+    {
+        config(['app.hsts_enabled' => true, 'app.hsts_max_age' => 600]);
+
+        $this->assertSame(
+            'max-age=600; includeSubDomains',
+            $this->strictTransportSecurityFor('https://dash.test/')->headers->get('Strict-Transport-Security'),
+        );
+    }
+
+    public function test_generated_urls_use_https_when_force_https_is_enabled(): void
+    {
+        config(['app.force_https' => false]);
+        (new AppServiceProvider($this->app))->boot();
+
+        $this->assertStringStartsWith('http://', url('/'));
+
+        config(['app.force_https' => true]);
+        (new AppServiceProvider($this->app))->boot();
+
+        $this->assertStringStartsWith('https://', url('/'));
+        $this->assertStringStartsWith('https://', route('login'));
+    }
+
+    /**
+     * Respons setelah melewati middleware StrictTransportSecurity untuk URL
+     * yang diberikan, dipakai agar test tidak bergantung pada server web.
+     */
+    protected function strictTransportSecurityFor(string $url): Response
+    {
+        return (new StrictTransportSecurity)->handle(
+            Request::create($url),
+            fn (Request $request) => new Response('ok'),
+        );
     }
 }

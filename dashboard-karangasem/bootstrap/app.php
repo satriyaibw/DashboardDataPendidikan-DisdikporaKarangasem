@@ -3,6 +3,7 @@
 use App\Http\Middleware\CheckVipAccess;
 use App\Http\Middleware\MetabaseCspHeaders;
 use App\Http\Middleware\SecurityHeaders;
+use App\Http\Middleware\StrictTransportSecurity;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -44,6 +45,11 @@ return Application::configure(basePath: dirname(__DIR__))
         // dikelola per-rute oleh MetabaseCspHeaders agar skrip inline panel
         // Filament tetap berjalan.
         $middleware->append(SecurityHeaders::class);
+
+        // Strict-Transport-Security. Header hanya dikirim untuk request HTTPS
+        // dan hanya bila HSTS_ENABLED=true, sehingga domain tidak pernah
+        // terkunci ke HTTPS sebelum TLS benar-benar terpasang.
+        $middleware->append(StrictTransportSecurity::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
