@@ -9,10 +9,12 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Role;
+use Tests\Concerns\HasAdminUser;
 use Tests\TestCase;
 
 class PasswordPolicyTest extends TestCase
 {
+    use HasAdminUser;
     use RefreshDatabase;
 
     protected int $vipRoleId;
@@ -124,7 +126,7 @@ class PasswordPolicyTest extends TestCase
 
     public function test_admin_panel_requires_authentication_for_user_management(): void
     {
-        $this->actingAs($this->adminUser())
+        $this->actingAs($this->adminUserWithMultiFactorAuthentication())
             ->get('/admin/users')
             ->assertOk();
     }

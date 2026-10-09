@@ -5,10 +5,12 @@ namespace Tests\Feature;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
+use Tests\Concerns\HasAdminUser;
 use Tests\TestCase;
 
 class VipAccessTest extends TestCase
 {
+    use HasAdminUser;
     use RefreshDatabase;
 
     protected function setUp(): void
@@ -74,9 +76,9 @@ class VipAccessTest extends TestCase
 
     public function test_admin_can_access_users_resource(): void
     {
-        $admin = User::factory()->create();
-        $admin->assignRole('admin');
-        $this->actingAs($admin)->get('/admin/users')->assertOk();
+        $this->actingAs($this->adminUserWithMultiFactorAuthentication())
+            ->get('/admin/users')
+            ->assertOk();
     }
 
     public function test_login_rate_limiting_is_enforced(): void

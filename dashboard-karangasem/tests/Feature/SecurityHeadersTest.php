@@ -10,10 +10,12 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Spatie\Permission\Models\Role;
+use Tests\Concerns\HasAdminUser;
 use Tests\TestCase;
 
 class SecurityHeadersTest extends TestCase
 {
+    use HasAdminUser;
     use RefreshDatabase;
 
     protected function setUp(): void
@@ -143,10 +145,9 @@ class SecurityHeadersTest extends TestCase
 
     public function test_admin_panel_still_renders_with_global_headers_installed(): void
     {
-        $admin = User::factory()->create();
-        $admin->assignRole('admin');
-
-        $this->actingAs($admin)->get('/admin')->assertOk();
+        $this->actingAs($this->adminUserWithMultiFactorAuthentication())
+            ->get('/admin')
+            ->assertOk();
     }
 
     public function test_hsts_is_not_sent_for_plain_http_requests(): void
