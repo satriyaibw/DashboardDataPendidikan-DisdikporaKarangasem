@@ -2,6 +2,10 @@
 
 namespace App\Providers;
 
+use App\Listeners\DiagnoseApplicationHealth;
+use Illuminate\Foundation\Events\DiagnosingHealth;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 
@@ -26,5 +30,38 @@ class AppServiceProvider extends ServiceProvider
         if (config('app.force_https')) {
             URL::forceScheme('https');
         }
+
+        // Route `/up` bawaan membungkus pemanggilannya dalam try/catch dan
+        // membalas 500 HANYA bila listener melempar exception; tidak ada
+        // objek hasil yang dikembalikan ke route. Listener karena itu
+        // memeriksa database, cache, dan disk, lalu melempar bila salah satu
+        // tidak bisa dipakai.
+        Event::listen(DiagnosingHealth::class, DiagnoseApplicationHealth::class);
+
+        $this->warnWhenScheduleTimezoneIsNotConfigured();
+    }
+
+    /**
+     * Peringatkan saat zona waktu aplikasi masih bawaan UTC.
+     *
+     * `config('app.timezone')` memakai `env('APP_TIMEZONE', 'UTC')`, jadi
+     * `.env` yang lupa diisi tidak menghasilkan error apa pun — semua
+     * jadwal tetap berjalan, hanya pukul 08:30 WITA untuk "00:30", sehingga
+     * akun VIP baru dinonaktifkan delapan jam setelah langganannya habis.
+     *
+     * Hanya peringatan, bukan exception: timezone UTC tetap sah untuk
+     * instalasi lain, dan menggagalkan boot karena nilai yang sebenarnya
+     * tidak salah hanya akan menutupi masalah lain yang lebih serius.
+     */
+    protected function warnWhenScheduleTimezoneIsNotConfigured(): void
+    {
+        if (config('app.timezone') !== 'UTC') {
+            return;
+        }
+
+        Log::warning('APP_TIMEZONE belum diisi; seluruh jadwal memakai UTC, bukan waktu lokal.', [
+            'expected' => 'Asia/Makassar',
+            'impact' => 'Penonaktifan VIP dan audit:prune berjalan 8 jam lebih lambat dari jadwal yang dimaksud.',
+        ]);
     }
 }

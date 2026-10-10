@@ -1,5 +1,6 @@
 <?php
 
+use Monolog\Formatter\JsonFormatter;
 use Monolog\Handler\NullHandler;
 use Monolog\Handler\StreamHandler;
 use Monolog\Handler\SyslogUdpHandler;
@@ -129,6 +130,42 @@ return [
         'null' => [
             'driver' => 'monolog',
             'handler' => NullHandler::class,
+        ],
+
+        /*
+         * Channel log terstruktur (Fase 6).
+         *
+         * Satu baris JSON per entri, ditulis ke stderr supaya bisa
+         * ditangkap orkestrator container (Docker/Kubernetes) sekaligus
+         * masuk ke sink log terpusat tanpa perlu grok regex pada log teks.
+         *
+         * Channel ini DITAMBAHKAN, bukan menggantikan channel bawaan:
+         * `LOG_CHANNEL=stack,single` tetap dipakai default, dan produksi
+         * bisa memindahkan `json` ke dalam `LOG_STACK` lewat .env tanpa
+         * menyentuh kode.
+         *
+         * `LOG_JSON_FORMATTER` tetap `env()` supaya channel bisa diganti
+         * tanpa deploy, tetapi nilainya hanya pernah datang dari .env —
+         * tidak pernah dari request atau parameter pengguna.
+         */
+        'json' => [
+            'driver' => 'monolog',
+            // Tanpa `name`, Laravel memakai APP_ENV sebagai nama channel dan
+            // setiap baris JSON akan berlabel `"channel":"production"`.
+            // Untuk log terstruktur, nama channel justru field yang dipakai
+            // untuk memfilter di sink terpusat.
+            'name' => 'json',
+            'level' => env('LOG_LEVEL', 'debug'),
+            'handler' => StreamHandler::class,
+            'handler_with' => [
+                'stream' => 'php://stderr',
+            ],
+            'formatter' => env('LOG_JSON_FORMATTER', JsonFormatter::class),
+            'formatter_with' => [
+                'batchMode' => JsonFormatter::BATCH_MODE_JSON,
+                'appendNewline' => true,
+            ],
+            'processors' => [PsrLogMessageProcessor::class],
         ],
 
         'emergency' => [

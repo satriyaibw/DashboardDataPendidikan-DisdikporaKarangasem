@@ -1,0 +1,50 @@
+# =============================================================================
+# Backup harian — contoh entri crontab (Fase 6)
+#
+# Berkas ini CONTOH dan tidak di-install otomatis.
+#
+# -----------------------------------------------------------------------------
+# CARA PASANG
+# -----------------------------------------------------------------------------
+#   crontab -e
+#   # tempel isi berkas ini, ganti <path-repo>
+#   # lalu: crontab -l   untuk memverifikasi
+#
+# Jalankan sebagai user yang berhak menulis ke BACKUP_DIR. Sebaiknya user yang
+# sama dengan yang menjalankan scheduler, agar keduanya punya hak akses ke
+# socket docker yang sama.
+#
+# -----------------------------------------------------------------------------
+# JADWAL
+# -----------------------------------------------------------------------------
+# 02:00 WITA — SEBELUM audit:prune (03:00) dan SEBELUM vip:deactivate-expired
+# berakhir pada hari yang sama. Urutan ini disengaja:
+#   1. backup membaca database sebelum ada perubahan, sehingga dump berisi
+#      keadaan yang benar-benar terpisah;
+#   2. pemangkasan audit 365 hari tidak pernah berjalan bersamaan dengan
+#      backup yang masih membaca tabel yang sama.
+#
+# -----------------------------------------------------------------------------
+# VERIFIKASI
+# -----------------------------------------------------------------------------
+#   crontab -l | grep run-backup.sh
+#   tail -f dashboard-karangasem/storage/logs/backup.log
+#   ls -lh dashboard-karangasem/storage/app/backups/daily/
+#
+# Kalau direktori daily kosong setelah jadwalnya lewat, jalankan manual untuk
+# melihat pesannya: ./deploy/backup/run-backup.sh
+# =============================================================================
+
+# 02:00, tiap hari.
+#
+# Output skrip dibuang ke /dev/null, BUKAN di-append ke backup.log.
+# `backup_log()` di lib.sh sudah menulis setiap baris ke backup.log DAN ke
+# stderr, jadi mengarahkan stderr ke file yang sama akan menulis setiap
+# pesan dua kali — sudah diuji: tiap baris keluar 2x saat dijalankan lewat
+# cron. Log tetap utuh di backup.log karena skrip yang menuliskannya.
+#
+# `|| logger` menutup lubang yang lain: kegagalannya (termasuk `cd` yang
+# gagal) tidak pernah sampai ke log mana pun kalau stdout/stderr di-/dev/null,
+# padahal itulah peristiwa yang paling perlu terlihat. Exit code non-nol
+# diteruskan ke syslog bertag `dashboard-backup`.
+0 2 * * * cd <path-repo> && ./deploy/backup/run-backup.sh >> /dev/null 2>&1 || logger -t dashboard-backup "run-backup.sh gagal (exit $?); periksa dashboard-karangasem/storage/logs/backup.log"
