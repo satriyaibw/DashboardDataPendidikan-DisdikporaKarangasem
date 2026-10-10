@@ -24,6 +24,8 @@ Rencana dan implementasi **Dashboard Data Pendidikan Kabupaten Karangasem**.
 - [`docs/security-checklist.md`](./docs/security-checklist.md) — checklist & prosedur verifikasi Fase 5 (keamanan, privasi, rotasi secret).
 - [`docs/read-only-test.md`](./docs/read-only-test.md) — hasil uji akses `analis`.
 - [`docs/migration-datamart.md`](./docs/migration-datamart.md) — prosedur cutover ke `datamart`.
+- [`docs/runbook.md`](./docs/runbook.md) — **runbook operasional** (Fase 6): arsitektur, restart, rotasi secret, backup/restore, jadwal harian, masalah umum, insiden.
+- [`deploy/backup/README.md`](./deploy/backup/README.md) — cara pakai skrip backup & restore drill.
 
 ## Fase 1 — Data Layer (Status: SELESAI)
 
@@ -172,8 +174,81 @@ vendor/bin/sail artisan security:scan-pii        # isi METABASE_ADMIN_* dulu
 vendor/bin/sail artisan metabase:check-embedding
 ```
 
-## Fase 6/7 — belum dimulai
+## Fase 6 — Operasional & Pemeliharaan (Status: SELESAI)
 
-- **Fase 6:** `routes/console.php` (`vip:deactivate-expired`, `audit:prune`),
-  backup, observability, `docs/runbook.md`.
+Lihat **`docs/runbook.md`** untuk prosedur operasional lengkap (arsitektur,
+restart, rotasi secret, backup, jadwal harian, masalah umum, insiden).
+
+**Penonaktifan VIP otomatis (WS-1)** — `vip:deactivate-expired` menyetel
+`is_active = false` bagi akun berperan `vip` yang `expires_at`-nya sudah lewat.
+Empat syaratnya: peran `vip`, `is_active` masih true, `expires_at` tidak null,
+dan `expires_at <= now()` (waktu aplikasi, **bukan** UTC). Akun `admin` tidak
+pernah tersentuh apa pun `expires_at`-nya, dan `expires_at` tidak pernah
+dihapus supaya jejak riwayat langganan tetap terbaca. `--dry-run` hanya
+menghitung, `--chunk` mengatur ukuran batch.
+
+**Audit penonaktifan otomatis (WS-1)** — `UserObserver::updated()` hanya mencatat
+bila `Auth::id() !== null`, sedangkan job terjadwal berjalan tanpa sesi.
+Karena itu perintah menulis audit-nya sendiri via
+`AdminActivityLogger::log('user.auto_deactivated', ...)` dengan properties
+`is_active` + `expires_at` saja, plus satu `Log::info()` ringkasan per eksekusi
+beserta ambang ISO 8601 ber-offset. Whitelist kolom tetap dipakai apa adanya.
+
+**Scheduler (WS-2)** — didaftarkan di `bootstrap/app.php` → `withSchedule()`
+(`app/Console/Kernel.php` tidak ada lagi sejak Laravel 11):
+
+| Waktu WITA | Job |
+|---|---|
+| 00:30 | `vip:deactivate-expired` |
+| 03:00 | `audit:prune --days=365` |
+| tiap jam | `metabase:check-embedding` |
+| Senin 05:00 | `security:scan-pii` |
+
+`->timezone(config('app.timezone'))` **wajib** ada: tanpanya jadwal memakai
+`schedule_timezone` (default UTC) sehingga "00:30" berjalan pukul 08:30 WITA.
+`onOneServer()` bergantung pada cache store bersama — `CACHE_STORE=database`
+sudah memenuhi. Contoh cron: `deploy/cron/dashboard-schedule.cron`.
+
+**Observability (WS-4)**
+
+- **Request ID** — middleware global `AssignRequestId`: UUID per request masuk ke
+  `Log::withContext(['request_id' => …])` dan ke header respons `Request-Id`.
+  Body request, header Authorization, dan nilai secret tidak pernah dibaca.
+- **Health check** — route `/up` bawaan Laravel membalas 500 **hanya** bila
+  listener melempar exception. `App\Listeners\DiagnoseApplicationHealth`
+  memeriksa DB, cache, dan disk, lalu melempar satu `RuntimeException` dengan
+  pesan generik bila ada yang gagal. Detail sebenarnya (disanitasi lewat
+  `SafeErrorMessage`) hanya masuk `Log::warning()`. Ketiga cek tetap dijalankan
+  meski ada yang gagal, agar log menyebut seluruh penyebab sekaligus.
+  **Karena itu `APP_DEBUG` wajib `false` di produksi** — dengan debug aktif,
+  route meneruskan exception apa adanya dan halaman debug membocorkan detail.
+- **Log JSON** — channel `json` baru di `config/logging.php` (Monolog
+  `JsonFormatter` ke `php://stderr`); channel bawaan tidak diubah, dan
+  diaktifkan lewat `LOG_STACK=single,json`.
+
+**Backup & restore (WS-3)** — `deploy/backup/run-backup.sh` membackup hanya dua
+target: `app_db` dan metadata Metabase (`metabase_postgres`). Database backbone
+`backbone_client` milik Pusdatin dan sengaja tidak dibackup. `set -euo
+pipefail`, `pg_dump -Fc`, verifikasi magic bytes `PGDMP` + `pg_restore --list`,
+retensi 14 harian + 4 mingguan, direktori mode `700`. Password tidak pernah
+menjadi argumen baris perintah. `restore-drill.sh` memulihkan ke database
+sementara berawalan `restore_drill_` lalu membuangnya — tidak pernah menyentuh
+database yang sedang jalan. Hasil uji restore nyata tercatat di
+`docs/runbook.md` §7.
+
+**Verifikasi:**
+
+```bash
+cd dashboard-karangasem
+vendor/bin/sail artisan schedule:list          # 4 job terdaftar
+vendor/bin/sail artisan vip:deactivate-expired --dry-run
+./deploy/backup/run-backup.sh
+./deploy/backup/restore-drill.sh
+```
+
+## Fase 7 — belum dimulai
+
 - **Fase 7:** UAT lintas fase, `docs/uat.md`.
+
+> Keputusan owner D1–D5 (kanal alert, retensi, target drill, jam audit:prune,
+> healthcheck Metabase) masih terbuka — lihat `docs/runbook.md` Lampiran.
