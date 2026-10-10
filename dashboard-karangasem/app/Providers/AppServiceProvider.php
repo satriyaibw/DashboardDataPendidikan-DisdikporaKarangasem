@@ -3,11 +3,14 @@
 namespace App\Providers;
 
 use App\Listeners\DiagnoseApplicationHealth;
+use App\Observers\RoleAssignmentObserver;
 use Illuminate\Foundation\Events\DiagnosingHealth;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
+use Spatie\Permission\Events\RoleAttachedEvent;
+use Spatie\Permission\Events\RoleDetachedEvent;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -38,7 +41,30 @@ class AppServiceProvider extends ServiceProvider
         // tidak bisa dipakai.
         Event::listen(DiagnosingHealth::class, DiagnoseApplicationHealth::class);
 
+        $this->registerRoleAssignmentAudit();
+
         $this->warnWhenScheduleTimezoneIsNotConfigured();
+    }
+
+    /**
+     * Catat perubahan peran ke jejak audit.
+     *
+     * Sakelar `permission.events_enabled` dipaksa true di sini, bukan hanya
+     * disetel di `config/permission.php`: Spatie hanya memancarkan event
+     * peran bila sakelar itu aktif, dan begitu sakelarnya mati jejak audit
+     * peran berhenti tanpa error apa pun. `vendor:publish` yang menimpa
+     * konfigurasi tidak boleh bisa mematikan audit tanpa disadari.
+     *
+     * Peran tidak bisa dicatat di `user.created`: Spatie menunda
+     * `assignRole()` sampai event `saved`, jadi saat `created` dipanggil
+     * pivot peran belum ada.
+     */
+    protected function registerRoleAssignmentAudit(): void
+    {
+        config(['permission.events_enabled' => true]);
+
+        Event::listen(RoleAttachedEvent::class, [RoleAssignmentObserver::class, 'roleAttached']);
+        Event::listen(RoleDetachedEvent::class, [RoleAssignmentObserver::class, 'roleDetached']);
     }
 
     /**
