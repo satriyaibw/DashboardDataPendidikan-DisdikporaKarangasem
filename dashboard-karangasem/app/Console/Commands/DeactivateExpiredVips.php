@@ -124,16 +124,41 @@ class DeactivateExpiredVips extends Command
                     return new Collection;
                 }
 
+                $now = CarbonImmutable::now();
+
                 // Pembaruan massal: melewati observer karena perintah ini
                 // berjalan tanpa sesi, sehingga `UserObserver::updated()`
                 // akan menutup diri sendiri (Auth::id() === null) dan jejak
                 // audit tidak akan pernah tertulis. Audit ditulis eksplisit
                 // di bawah, di luar transaksi, lewat AdminActivityLogger.
+                //
+                // Keempat syarat selector diulang pada UPDATE, bukan hanya
+                // pada SELECT. Tanpa pengulangan itu, operator yang sedang
+                // memperpanjang langganan bisa ikut tertimpa: SELECT
+                // sudah membaca baris sebagai kedaluwarsa, lalu pembaruan
+                // massal meniadakannya semata karena kunci primary-nya cocok.
+                // Mengulang syarat membuat PostgreSQL mengevaluasi ulang baris
+                // terkini pada saat UPDATE, sehingga akun yang barusan
+                // diperpanjang tidak ikut dinonaktifkan.
                 User::query()
                     ->whereKey($users->modelKeys())
-                    ->update(['is_active' => false, 'updated_at' => CarbonImmutable::now()]);
+                    ->where('is_active', true)
+                    ->whereNotNull('expires_at')
+                    ->where('expires_at', '<=', $threshold)
+                    ->update(['is_active' => false, 'updated_at' => $now]);
 
-                return $users;
+                // Yang dikembalikan adalah baris yang benar-benar berubah,
+                // bukan hasil SELECT. Kalau pembaruan di atas melewati
+                // sebagian akun karena kondisinya sudah berubah di antara
+                // SELECT dan UPDATE, `admin_activity_logs` tidak boleh tetap
+                // mencatatinya sebagai dinonaktifkan — jejak audit yang
+                // bertentangan dengan isi database lebih berbahaya daripada
+                // jejak yang hilang.
+                return User::query()
+                    ->whereKey($users->modelKeys())
+                    ->where('is_active', false)
+                    ->where('updated_at', $now)
+                    ->get();
             });
 
             foreach ($batch as $user) {

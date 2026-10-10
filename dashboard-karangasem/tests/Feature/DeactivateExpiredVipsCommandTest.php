@@ -6,6 +6,7 @@ use App\Models\AdminActivityLog;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Spatie\Permission\Models\Role;
 use Tests\Concerns\HasAdminUser;
@@ -233,5 +234,44 @@ class DeactivateExpiredVipsCommandTest extends TestCase
 
         $this->assertSame(0, User::query()->where('is_active', true)->count());
         $this->assertSame(5, AdminActivityLog::query()->where('action', 'user.auto_deactivated')->count());
+    }
+
+    public function test_an_account_extended_mid_run_is_neither_deactivated_nor_audited(): void
+    {
+        $user = $this->vip(['expires_at' => now()->subDay()]);
+
+        // Simulasikan operator yang memperpanjang langganan tepat setelah
+        // batch terbaca: SELECT sudah melihat baris sebagai kedaluwarsa,
+        // lalu `expires_at` berubah sebelum UPDATE dieksekusi.
+        //
+        // Syarat selector diulang pada UPDATE persis untuk menutup celah ini.
+        // Kalau hanya `whereKey()` yang dipakai, baris tetap dinonaktifkan
+        // semata karena primary key-nya cocok — pelanggan yang baru membayar
+        // langsung kehilangan akses.
+        $armed = true;
+
+        DB::listen(function ($query) use (&$armed, $user): void {
+            if (! $armed || ! str_contains($query->sql, 'from "users"') || ! str_contains($query->sql, 'limit')) {
+                return;
+            }
+
+            $armed = false;
+
+            User::query()
+                ->whereKey($user->getKey())
+                ->update(['expires_at' => now()->addMonth()]);
+        });
+
+        $this->artisan('vip:deactivate-expired')->assertSuccessful();
+
+        $this->assertTrue(
+            $user->fresh()->is_active,
+            'Akun yang diperpanjang saat job berjalan tidak boleh dinonaktifkan.',
+        );
+
+        // Jejak audit harus mengikuti kenyataan database. Entri yang
+        // mengklaim akun ini dinonaktifkan bertentangan dengan isi tabel
+        // `users` dan akan menyesatkan investigator saat insiden.
+        $this->assertSame(0, AdminActivityLog::query()->where('action', 'user.auto_deactivated')->count());
     }
 }
