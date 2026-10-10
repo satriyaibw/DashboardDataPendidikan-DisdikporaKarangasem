@@ -1,0 +1,47 @@
+# =============================================================================
+# Scheduler Laravel — contoh entri crontab (Fase 6)
+#
+# Berkas ini CONTOH dan tidak di-install otomatis. Salin baris yang diperlukan
+# ke crontab server dengan `crontab -e`.
+#
+# -----------------------------------------------------------------------------
+# CARA PASANG
+# -----------------------------------------------------------------------------
+#   sudo crontab -u <user> -l > /tmp/crontab-sekarang
+#   cat deploy/cron/dashboard-schedule.cron >> /tmp/crontab-sekarang
+#   crontab /tmp/crontab-sekarang
+#
+# Ganti placeholder <path-repo> dan <user> dengan nilai sebenarnya. Verifikasi
+# dengan `crontab -l`.
+#
+# -----------------------------------------------------------------------------
+# APAKAH SCHEDULER SUDAH JALAN?
+# -----------------------------------------------------------------------------
+# `schedule:list` hanya menampilkan definisi jadwal — TIDAK membuktikan cron
+# berjalan. Bukti bahwa scheduler aktif adalah satu baris baru di
+# storage/logs/framework.log tiap menit, atau:
+#
+#   php artisan schedule:run      # satu siklus manual
+#   php artisan schedule:list     # daftar jadwal
+#   php artisan schedule:work     # mode dev (jalan kontinuus, JANGAN dipakai
+#                                  # di produksi karena memblokir terminal)
+#
+# Menghapus lock yang menggantung (mis. server mati saat job berjalan):
+#
+#   php artisan schedule:clear-cache
+# =============================================================================
+
+# Jalankan tiap menit; Laravel yang memutuskan job mana yang sudah Due.
+# Scheduler tidak akan menjalankan job yang sama dua kali selama lock masih
+# hidup (withoutOverlapping), jadi menjalankan cron tiap menit aman.
+#
+# Jadwal yang dijalankan:
+#   00:30 WITA  vip:deactivate-expired
+#   02:00 WITA  backup harian (deploy/cron/dashboard-backup.cron)
+#   03:00 WITA  audit:prune --days=365
+#   tiap jam    metabase:check-embedding
+#   Senin 05:00 security:scan-pii
+#
+# >> mengarahkan stdout/stderr ke syslog agar error tidak menumpuk
+#    di mail root. Pesan cron tetap masuk ke /var/log/syslog.
+* * * * * cd <path-repo>/dashboard-karangasem && php artisan schedule:run >> /dev/null 2>&1
