@@ -22,7 +22,22 @@
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="BROADCAST_CONNECTION" value="null"/>
-        <env name="CACHE_STORE" value="array"/>
+        <!--
+            Sengaja `database`, bukan `array` (default Laravel). Pencegahan
+            pemakaian ulang kode TOTP menyimpan timestep kode terakhir yang
+            diterima di cache lalu membacanya di bawah lock. Store `array`
+            memang menyediakan lock, tetapi isinya hanya hidup di dalam satu
+            proses, jadi catatan timestep tidak terbagi antar permintaan.
+            Test memakai store yang sama dengan produksi agar sifat keamanan
+            itu benar-benar diuji.
+        -->
+        <env name="CACHE_STORE" value="database"/>
+        <!--
+            Proxy tepercaya untuk test audit log: hanya 127.0.0.1. Test dapat
+            membuktikan bahwa IP klien diambil dari X-Forwarded-For hanya bila
+            proxy terdaftar, dan dari REMOTE_ADDR bila tidak.
+        -->
+        <env name="TRUSTED_PROXIES" value="127.0.0.1"/>
         <env name="DB_HOST" value="pgsql"/><env name="DB_PORT" value="5432"/><env name="DB_CONNECTION" value="pgsql"/>
         <env name="DB_DATABASE" value="testing"/><env name="DB_USERNAME" value="app"/>
         <env name="DB_URL" value=""/>

@@ -6,10 +6,12 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use RuntimeException;
 use Spatie\Permission\Models\Role;
+use Tests\Concerns\HasAdminUser;
 use Tests\TestCase;
 
 class VipDashboardTest extends TestCase
 {
+    use HasAdminUser;
     use RefreshDatabase;
 
     protected function setUp(): void
@@ -188,10 +190,7 @@ class VipDashboardTest extends TestCase
 
     public function test_admin_panel_is_not_affected_by_metabase_csp_header(): void
     {
-        $admin = User::factory()->create();
-        $admin->assignRole('admin');
-
-        $response = $this->actingAs($admin)->get('/admin');
+        $response = $this->actingAs($this->adminUserWithMultiFactorAuthentication())->get('/admin');
 
         $response->assertOk();
         $this->assertStringNotContainsString(

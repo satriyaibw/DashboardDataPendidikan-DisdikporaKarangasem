@@ -1,0 +1,163 @@
+name: Security
+
+on:
+  push:
+    branches:
+      - main
+      - "fase-*"
+  pull_request:
+  schedule:
+    # Setiap Senin 03:00 UTC — memastikan advisory baru langsung terlihat.
+    - cron: "0 3 * * 1"
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          # Harus sama dengan runtime produksi (vendor/laravel/sail/runtimes/8.5).
+          # composer.lock membutuhkan php >=8.4.1 — banyak paket Symfony 8.1 —
+          # sehingga menyalakan CI di PHP 8.3 menggagalkan `composer install`.
+          php-version: "8.5"
+          coverage: none
+          tools: composer:v2
+
+      - name: Get Composer cache directory
+        id: composer-cache
+        working-directory: dashboard-karangasem
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-php-8.5-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: ${{ runner.os }}-php-8.5-composer-
+
+      # --no-scripts: skrip post-autoload-dump (package:discover,
+      # filament:upgrade) membutuhkan .env + APP_KEY yang belum ada saat
+      # install. Job ini tidak menjalankan aplikasi, jadi tidak perlu.
+      - name: Install dependencies
+        working-directory: dashboard-karangasem
+        run: composer install --no-interaction --prefer-dist --no-progress --no-scripts
+
+      # Laporan disimpan sebagai artifact supaya advisory yang membuat build
+      # merah tetap dapat ditinjau dan didokumentasikan sebagai risiko
+      # yang diterima (masterplan §9: jangan downgrade paket secara buta).
+      # Redirect dipakai, bukan pipe ke tee, agar exit code audit tetap jatuh
+      # ke step ini dan build benar-benar merah bila ada temuan.
+      - name: Audit dependencies
+        working-directory: dashboard-karangasem
+        run: composer audit --format=plain --locked > composer-audit.txt 2>&1
+
+      - name: Upload audit report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: composer-audit-${{ github.run_id }}
+          path: dashboard-karangasem/composer-audit.txt
+          retention-days: 14
+          if-no-files-found: warn
+
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+
+    # Hanya DB_PASSWORD yang perlu di-set di sini: phpunit.xml sudah memaksa
+    # DB_CONNECTION, DB_HOST, DB_PORT, DB_DATABASE, dan DB_USERNAME, tetapi
+    # sengaja tidak memuat DB_PASSWORD (nilainya dihapus dari repo agar tidak
+    # ada kredensial ter-commit). Bila tidak di-set, aplikasi memakai
+    # DB_PASSWORD=changeme dari .env.example dan Postgres menolaknya dengan
+    # "password authentication failed". Laravel Dotenv bersifat immutable,
+    # jadi variabel environment ini menang atas nilai di .env.
+    env:
+      DB_PASSWORD: secret
+
+    # phpunit.xml memaksa DB_HOST=pgsql, DB_PORT=5432 dan DB_CONNECTION=pgsql
+    # (nilai itu benar saat aplikasi berjalan di Sail). Karena <env> phpunit
+    # menimpa variabel environment, nama host `pgsql` dipetakan ke 127.0.0.1
+    # melalui /etc/hosts agar konfigurasi tidak perlu diubah.
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: app_db
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: secret
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -q -d app_db -U app"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          # Samakan dengan runtime produksi (Sail runtime 8.5 / PHP 8.5.11).
+          # composer.lock menuntut php >=8.4.1.
+          php-version: "8.5"
+          extensions: pdo_pgsql
+          coverage: none
+          tools: composer:v2
+
+      - name: Map the Sail Postgres hostname to the service container
+        run: echo "127.0.0.1 pgsql" | sudo tee -a /etc/hosts
+
+      # phpunit.xml memakai DB_DATABASE=testing; basis data itu harus dibuat
+      # dan dimiliki oleh user yang sama.
+      - name: Create testing database
+        env:
+          PGPASSWORD: secret
+        run: |
+          psql -h 127.0.0.1 -p 5432 -U app -d app_db \
+            -c "CREATE DATABASE testing OWNER app"
+
+      - name: Get Composer cache directory
+        id: composer-cache
+        working-directory: dashboard-karangasem
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-php-8.5-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: ${{ runner.os }}-php-8.5-composer-
+
+      # --no-scripts agar post-autoload-dump tidak berjalan sebelum .env dan
+      # APP_KEY tersedia; package discovery dijalankan eksplisit setelahnya.
+      - name: Install dependencies
+        working-directory: dashboard-karangasem
+        run: composer install --no-interaction --prefer-dist --no-progress --no-scripts
+
+      - name: Prepare environment
+        working-directory: dashboard-karangasem
+        run: |
+          cp .env.example .env
+          php artisan key:generate --force
+          php artisan package:discover --ansi
+
+      - name: Run tests
+        working-directory: dashboard-karangasem
+        run: php artisan test --compact
+
+      - name: Check code style
+        working-directory: dashboard-karangasem
+        run: vendor/bin/pint --test

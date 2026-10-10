@@ -2,6 +2,7 @@
 
 namespace App\Providers\Filament;
 
+use Filament\Auth\MultiFactor\App\AppAuthentication;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -28,6 +29,21 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login()
+            // Multi-factor authentication (TOTP) WAJIB untuk seluruh akun yang
+            // dapat mengakses panel admin. Panel ini mengelola masa berlaku akun
+            // VIP, sehingga hanya password bukan pertahanan yang memadai.
+            //
+            // Kode pemulihan (recovery codes) disertakan supaya admin yang
+            // kehilangan perangkat TOTP tidak permanen terkunci dari panel.
+            //
+            // CATATAN: pencegahan pemakaian ulang kode TOTP menyimpan
+            // timestep kode terakhir di cache lalu membacanya di bawah lock.
+            // Cache store harus BERBAGI antar proses (database/redis/
+            // memcached); `array` tidak, sehingga catatan timestep hilang
+            // antar permintaan. CACHE_STORE=database sudah memenuhi.
+            ->multiFactorAuthentication([
+                AppAuthentication::make(),
+            ], isRequired: true)
             ->colors([
                 'primary' => Color::Amber,
             ])

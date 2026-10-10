@@ -56,6 +56,52 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Force HTTPS
+    |--------------------------------------------------------------------------
+    |
+    | Ketika true, seluruh URL yang dihasilkan route()/url() memakai skema
+    | https. Nilai dibaca dari env hanya di file config ini — jangan memanggil
+    | env() langsung di luar config agar hasil `config:cache` tetap benar.
+    |
+    | Aktifkan bersama TLS pada reverse proxy. Bila Nginx sudah melakukan
+    | redirect HTTP->HTTPS, nilai ini tetap berguna agar URL yang dibuat dari
+    | CLI (scheduler, notifikasi) tidak keliru memakai http.
+    |
+    */
+
+    'force_https' => (bool) env('FORCE_HTTPS', false),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Strict Transport Security (HSTS)
+    |--------------------------------------------------------------------------
+    |
+    | Toggle terpisah dari FORCE_HTTPS karena keduanya punya risiko berbeda:
+    | FORCE_HTTPS hanya mempengaruhi URL yang dihasilkan aplikasi, sedangkan
+    | HSTS memerintahkan browser mengunci domain ke HTTPS dan tidak dapat
+    | dicabut dari sisi server. Keduanya sengaja opt-in supaya salah
+    | konfigurasi tidak mengunci domain sebelum TLS benar-benar siap.
+    |
+    */
+
+    'hsts_enabled' => (bool) env('HSTS_ENABLED', false),
+
+    // Masa berlaku HSTS dalam detik. Naikkan ke 0 HANYA untuk mencabut HSTS
+    // setelah domain akan berhenti melayani HTTPS.
+    'hsts_max_age' => (int) env('HSTS_MAX_AGE', 31536000),
+
+    // Sertakan direktif `includeSubDomains` pada header HSTS.
+    //
+    // Default TIDAK menyertakannya: direktif ini memaksa seluruh subdomain
+    // ikut memakai HTTPS. Mengaktifkannya sebelum semua subdomain siap
+    // membuat subdomain yang belum TLS tidak dapat diakses sama sekali
+    // (browser menolak sebelum sempat melakukan request), dan seperti HSTS
+    // itu sendiri, pencabutannya jauh lebih lambat daripada pengaktifan.
+    // Nyalakan hanya setelah dipastikan seluruh subdomain sudah HTTPS.
+    'hsts_include_subdomains' => (bool) env('HSTS_INCLUDE_SUBDOMAINS', false),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |

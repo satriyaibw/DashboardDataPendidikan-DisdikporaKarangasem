@@ -54,7 +54,36 @@ METABASE_SITE_URL=http://localhost:3000
 2. Update `MB_EMBEDDING_SECRET_KEY` di `deploy/metabase/.env`
 3. Update `METABASE_EMBEDDING_SECRET` di `.env` Laravel (Fase 4)
 4. Restart Metabase: `docker compose -f deploy/metabase/docker-compose.yml restart`
-5. Verifikasi token embed baru berfungsi
+5. **Verifikasi rotasi berhasil:**
+   ```bash
+   cd dashboard-karangasem
+   vendor/bin/sail artisan metabase:check-embedding
+   ```
+   Perintah ini memvalidasi konfigurasi lewat service yang sama dengan yang
+   dipakai produksi (tanpa menduplikasi aturan validasi), lalu memuat satu URL
+   bertanda tangan dan melaporkan status HTTP. Exit code `1` bila konfigurasi
+   tidak valid **atau** Metabase menjawab 4xx/5xx, dan `0` hanya bila
+   Metabase menjawab 2xx/3xx. Respons 401/403 adalah tanda paling umum bahwa
+   embedding belum aktif atau secret tidak identik dengan
+   `MB_EMBEDDING_SECRET_KEY`. Secret dan token **tidak pernah ikut tercetak**
+   di output maupun log.
+6. Uji manual: buka halaman publik dan halaman VIP, pastikan iframe dashboard
+   tetap tampil (bukan "Embedding is not enabled for this object" / 401).
+
+### Jangan rotasi `MB_ENCRYPTION_SECRET_KEY` tanpa kebutuhan
+
+`MB_ENCRYPTION_SECRET_KEY` mengenkripsi **kredensial koneksi database** yang
+tersimpan di metadata Metabase. Merotasi kunci enkripsi membuat seluruh
+kredensial koneksi harus di-set ulang lewat Admin Panel (sudah diperingatkan di
+`deploy/metabase/docker-compose.yml`). Rotasi secret **embedding** tidak
+membutuhkan hal ini — keduanya berbeda dan tidak perlu dirotasi bersamaan.
+
+### Catatan soal token
+
+JWT dipakai untuk **penandatanganan (signed)**, bukan enkripsi: siapa pun dapat
+membaca isi `resource`, `params`, dan `exp`. Karena itu TTL sengaja pendek
+(METABASE_EMBED_TTL, default 600 detik) dan halaman VIP mengirim
+`Cache-Control: no-store, private` agar token tidak tersimpan di cache browser.
 
 ## Troubleshooting
 
