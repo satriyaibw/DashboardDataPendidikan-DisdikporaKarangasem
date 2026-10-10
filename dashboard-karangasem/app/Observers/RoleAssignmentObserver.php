@@ -52,14 +52,22 @@ class RoleAssignmentObserver
             return;
         }
 
+        // Nama peran dibaca sekali, di titik event diterima. Tabel peran
+        // berdiri sendiri dan tidak bergantung pada akun, jadi nilainya sudah
+        // benar di sini — termasuk untuk model yang belum tersimpan, yang
+        // pivot-nya belum ada sama sekali. Karena itu nama peran yang
+        // dicatat selalu persis peran yang dipancarkan event, bukan seluruh
+        // peran yang meloncat pada akun.
+        $roleNames = static::roleNames($roles);
+
         if (! $model->exists) {
-            $this->recordAfterSave($model, $action);
+            $this->recordAfterSave($model, $roleNames, $action);
 
             return;
         }
 
         AdminActivityLogger::log($action, $model, [
-            'roles' => static::roleNames($roles),
+            'roles' => $roleNames,
         ]);
     }
 
@@ -68,24 +76,31 @@ class RoleAssignmentObserver
      *
      * Spatie memancarkan event dari dalam `assignRole()`, jadi untuk model
      * baru event tiba sebelum `save()`: akun belum punya primary key untuk
-     * ditunjuk dan pivot peran belum ada.
+     * ditunjuk, sehingga baris audit belum bisa ditulis. Penulisan
+     * ditunda sampai `saved`.
      *
-     * Spatie memasang pivot-nya sendiri lewat listener `saved`, dan listener
-     * itu terdaftar lebih dulu — sehingga listener yang dipasang di sini
-     * berjalan setelahnya. ordered listener inilah yang membuat nama peran
-     * sudah bisa dibaca pada saat audit ditulis.
+     * Penanda `&$recorded` itu wajib. Listener `saved` didaftarkan ke
+     * dispatcher milik model, bukan ke instance-nya, dan tidak pernah
+     * dilepas — sehingga ia tetap menyala untuk setiap `save()` berikutnya
+     * selama proses berjalan. Tanpa penanda, memuat ulang satu akun akan
+     * menulis baris audit `user.role_attached` tambahan yang isinya
+     * identik, membanjiri log dengan salinan dari satu peristiwa yang sama.
+     * Pola ini sama dengan yang dipakai `HasRoles::assignRole()` Spatie
+     * untuk listener miliknya sendiri.
      */
-    protected function recordAfterSave(User $model, string $action): void
+    protected function recordAfterSave(User $model, string $roleNames, string $action): void
     {
-        $model->saved(function (User $saved) use ($model, $action): void {
-            if ($saved->isNot($model)) {
+        $recorded = false;
+
+        $model->saved(function (User $saved) use ($model, $roleNames, $action, &$recorded): void {
+            if ($recorded || $saved->isNot($model)) {
                 return;
             }
 
-            // Peran dibaca dari database, bukan dari relasi: listener ini
-            // mungkin berjalan sebelum Spatie menyelesaikan attach-nya.
+            $recorded = true;
+
             AdminActivityLogger::log($action, $saved, [
-                'roles' => $saved->roles()->pluck('name')->sort()->implode(', '),
+                'roles' => $roleNames,
             ]);
         });
     }

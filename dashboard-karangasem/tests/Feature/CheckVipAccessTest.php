@@ -6,7 +6,6 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\DB as Database;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
@@ -70,7 +69,10 @@ class CheckVipAccessTest extends TestCase
                 return;
             }
 
-            if (preg_match('/"?(is_active|expires_at)"?/i', $query->sql) === 1) {
+            // Hanya identifier kolom mandiri yang dihitung, bukan
+            // substring di tengah nama lain (`is_active_reason`) maupun isi
+            // nilai yang kebetulan memuat kata itu.
+            if (preg_match('/(?<![\w])(?:"(is_active|expires_at)"|\b(is_active|expires_at)\b)/i', $query->sql) === 1) {
                 $this->entitlementWrites[] = $query->sql;
             }
         });
@@ -300,7 +302,7 @@ class CheckVipAccessTest extends TestCase
         $user = $this->vipUser();
         $user->forceFill(['is_active' => false])->save();
 
-        Database::connection()->table('users')->where('id', $user->getKey())->update(['expires_at' => null]);
+        DB::connection()->table('users')->where('id', $user->getKey())->update(['expires_at' => null]);
 
         $this->assertNotSame(
             [],

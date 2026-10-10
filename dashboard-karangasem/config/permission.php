@@ -134,9 +134,15 @@ return [
      * \Spatie\Permission\Events\PermissionAttachedEvent
      * \Spatie\Permission\Events\PermissionDetachedEvent
      *
-     * To enable, set to true, and then create listeners to watch these events.
+     * Kept true: App\Observers\RoleAssignmentObserver listens to these events
+     * to write the role part of the admin audit trail. With events disabled,
+     * the roles column in the audit log silently disappears and nothing
+     * fails loudly.
+     *
+     * AppServiceProvider also forces this on at boot, so republishing the
+     * package config cannot quietly disable the audit trail.
      */
-    'events_enabled' => false,
+    'events_enabled' => true,
 
     /*
      * Teams Feature.

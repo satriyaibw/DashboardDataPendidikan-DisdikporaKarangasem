@@ -44,7 +44,7 @@ langsung di host:
 vendor/bin/sail artisan test --compact
 ```
 
-Status terakhir Fase 7: **367 test, 783 assertion, hijau.**
+Status terakhir Fase 7: **370 test, 787 assertion, hijau.**
 
 ### Pemetaan skenario ke test
 
@@ -204,13 +204,42 @@ Event Spatie memerlukan `permission.events_enabled` — sakelarnya dinyalakan di
 
 #### Test penjaga
 
-`tests/Feature/RoleAssignmentObserverTest.php` (11 test), termasuk:
+`tests/Feature/RoleAssignmentObserverTest.php` (14 test), termasuk:
 
 - `test_spatie_role_events_are_enabled` — menjaga sakelar tetap menyala
 - `test_detaching_a_role_is_recorded` — nama peran pada detach dibaca dari
   tabel peran, bukan relasi (relasi sudah kosong setelah pivot dilepas)
 - `test_creating_an_account_with_a_role_leaves_a_complete_trail` — kasus model
   baru, saat event tiba sebelum `save()`
+
+### D-2 — satu pemasangan peran menghasilkan banyak baris audit — **SUDAH DIPERBAIKI**
+
+- **Tingkat:** Tinggi
+- **Lokasi:** `app/Observers/RoleAssignmentObserver.php`, `recordAfterSave()`
+- **Gejala (sebelum perbaikan):** baris `user.role_attached` bertambah terus
+  setiap kali akun disimpan ulang — 1 → 2 → 3 untuk satu peristiwa memasang
+  peran. Jejak audit flooded dengan salinan dari satu aksi yang sama, sehingga
+  reviewer tidak bisa membedakan "admin memasang peran" dari "sistem menyimpan
+  ulang akun".
+- **Akar masalah:** `$model->saved(...)` mendaftarkan listener ke **dispatcher
+  global** dengan kunci nama class, bukan ke instance model, dan tidak pernah
+  dilepas. Listener itu karena itu menyala untuk setiap `save()` berikutnya
+  selama proses berjalan. Spatiesendiri memakai pola penanda `&$saved` untuk
+  listener-nya; pola yang sama belum dipakai di sini.
+- **Solusi:** penanda sekali-pakai `&$recorded` pada listener yang ditunda.
+  Selain itu, nama peran kini dibaca dari `rolesOrIds` event saat event
+  diterima — tabel peran berdiri sendiri, jadi nilainya sudah benar sejak awal
+  dan tidak bergantung pada urutan listener Spatie.
+
+#### Test penjaga
+
+- `test_saving_the_account_again_does_not_duplicate_the_role_audit_entry` —
+  tanpa penanda, test ini gagal dengan "Failed asserting that 3 is identical
+  to 1"
+- `test_saving_a_different_account_records_no_role_entry_for_it` — listener
+  yang tertunda tidak boleh menyalin jejak audit ke akun lain
+- `test_the_entry_names_only_the_role_that_was_actually_attached` — baris audit
+  menyebut peran yang dipasang, bukan gabungan seluruh peran akun
 
 ### Catatan (bukan defek)
 

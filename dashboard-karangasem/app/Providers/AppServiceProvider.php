@@ -49,9 +49,13 @@ class AppServiceProvider extends ServiceProvider
     /**
      * Catat perubahan peran ke jejak audit.
      *
-     * Diaktifkan lewat `permission.events_enabled` karena Spatie hanya
-     * memancarkan event peran bila sakelar tersebut aktif. Tanpanya, kolom
-     * `roles` pada audit `user.created` selalu kosong: Spatie menunda
+     * Sakelar `permission.events_enabled` dipaksa true di sini, bukan hanya
+     * disetel di `config/permission.php`: Spatie hanya memancarkan event
+     * peran bila sakelar itu aktif, dan begitu sakelarnya mati jejak audit
+     * peran berhenti tanpa error apa pun. `vendor:publish` yang menimpa
+     * konfigurasi tidak boleh bisa mematikan audit tanpa disadari.
+     *
+     * Peran tidak bisa dicatat di `user.created`: Spatie menunda
      * `assignRole()` sampai event `saved`, jadi saat `created` dipanggil
      * pivot peran belum ada.
      */
@@ -74,10 +78,6 @@ class AppServiceProvider extends ServiceProvider
      * Hanya peringatan, bukan exception: timezone UTC tetap sah untuk
      * instalasi lain, dan menggagalkan boot karena nilai yang sebenarnya
      * tidak salah hanya akan menutupi masalah lain yang lebih serius.
-     */
-
-    /**
-     * Peringatkan saat zona waktu aplikasi masih bawaan UTC.
      */
     protected function warnWhenScheduleTimezoneIsNotConfigured(): void
     {

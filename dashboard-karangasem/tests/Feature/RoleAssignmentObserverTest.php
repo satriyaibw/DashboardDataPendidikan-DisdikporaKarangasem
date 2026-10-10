@@ -196,6 +196,93 @@ class RoleAssignmentObserverTest extends TestCase
     }
 
     /**
+     * Penundaan sampai `saved` tidak boleh mengubahnya jadi penulisan
+     * berulang.
+     *
+     * Listener `saved` didaftarkan pada dispatcher global dengan kunci
+     * nama class, bukan pada instance — sehingga tetap menyala untuk setiap
+     * `save()` berikutnya. Tanpa penanda sekali-pakai, satu peristiwa
+     * "pasang peran" menjadi tiga baris audit yang isinya sama persis begitu
+     * akun disimpan ulang dua kali.
+     */
+    public function test_saving_the_account_again_does_not_duplicate_the_role_audit_entry(): void
+    {
+        $this->loginAsActor();
+
+        $user = new User([
+            'name' => 'Siti',
+            'email' => 'siti@example.com',
+            'password' => 'PasswordKuat123',
+            'is_active' => true,
+        ]);
+        $user->assignRole('vip');
+        $user->save();
+
+        $user->update(['name' => 'Siti Aminah']);
+        $user->update(['name' => 'Siti A.']);
+
+        $this->assertSame(
+            1,
+            $user->adminActivityLogs()->where('action', 'user.role_attached')->count(),
+            'Satu pemasangan peran harus menghasilkan satu baris audit, berapa kali pun akun disimpan ulang.',
+        );
+    }
+
+    /**
+     * Penundaan hanya berlaku pada model tertentu, bukan pada semua akun.
+     *
+     * Karena listener menempel ke dispatcher global, penyimpanan akun lain
+     * akan ikut memicu listener yang tertunda. Guard `isNot` harus
+     * menyebabkan baris audit salah akun itu tidak pernah muncul.
+     */
+    public function test_saving_a_different_account_records_no_role_entry_for_it(): void
+    {
+        $this->loginAsActor();
+
+        $first = new User([
+            'name' => 'Siti',
+            'email' => 'siti@example.com',
+            'password' => 'PasswordKuat123',
+            'is_active' => true,
+        ]);
+        $first->assignRole('vip');
+        $first->save();
+
+        $second = User::factory()->create(['name' => 'Budi']);
+        $second->update(['name' => 'Budi Santoso']);
+
+        $this->assertSame(0, $second->adminActivityLogs()->where('action', 'user.role_attached')->count());
+    }
+
+    /**
+     * Nama peran yang tercatat harus persis peran yang dipasang pada
+     * peristiwa itu, bukan seluruh peran yang ada pada akun.
+     */
+    public function test_the_entry_names_only_the_role_that_was_actually_attached(): void
+    {
+        $this->loginAsActor();
+
+        $user = User::factory()->create();
+        $user->assignRole('vip');
+
+        $firstLog = $user->adminActivityLogs()->where('action', 'user.role_attached')->sole();
+        $this->assertSame('vip', $firstLog->properties['roles']['after']);
+
+        $user->assignRole('admin');
+
+        $adminLog = $user->adminActivityLogs()
+            ->where('action', 'user.role_attached')
+            ->latest('id')
+            ->firstOrFail();
+
+        $this->assertSame(
+            'admin',
+            $adminLog->properties['roles']['after'],
+            'Baris kedua harus menyebut peran yang baru dipasang, bukan gabungan seluruh peran akun.',
+        );
+    }
+
+    /**
      * Peran harus benar-benar terpasang pada database, bukan hanya tercatat
      * di audit. Baris audit yang benar tentang keadaan yang salah tidak
      * menolong siapa pun.
