@@ -30,3 +30,7 @@ Thumbs.db
 # IDE
 .idea/
 .vscode/
+
+# Working documents (rencana kerja lokal, dipublikasikan lewat GitHub Issue)
+/plan.md
+/PLAN.md
