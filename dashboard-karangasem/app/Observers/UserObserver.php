@@ -73,8 +73,13 @@ class UserObserver
     /**
      * Kondisi akhir atribut yang boleh dicatat pada saat acara terjadi.
      *
-     * `roles` adalah relasi, bukan kolom: nilainya diambil sebagai daftar nama
-     * peran agar tahu akun dibuat sebagai vip/admin.
+     * `roles` TIDAK disertakan di sini. Spatie menunda `assignRole()` sampai
+     * event `saved`, sehingga pada `created` pivot peran belum ada dan
+     * nilainya tidak akan pernah terbaca — hanya menghasilkan string kosong
+     * yang tidak informatif.
+     *
+     * Peran dicatat terpisah oleh {@see RoleAssignmentObserver} lewat event
+     * `RoleAttachedEvent`, yang benar-benar berjalan setelah pivot terpasang.
      *
      * @return array<string, mixed>
      */
@@ -89,8 +94,6 @@ class UserObserver
 
             $properties[$attribute] = $user->getAttribute($attribute);
         }
-
-        $properties['roles'] = $user->roles->pluck('name')->sort()->implode(', ');
 
         return $properties;
     }

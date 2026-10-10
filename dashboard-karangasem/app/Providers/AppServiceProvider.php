@@ -3,11 +3,14 @@
 namespace App\Providers;
 
 use App\Listeners\DiagnoseApplicationHealth;
+use App\Observers\RoleAssignmentObserver;
 use Illuminate\Foundation\Events\DiagnosingHealth;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
+use Spatie\Permission\Events\RoleAttachedEvent;
+use Spatie\Permission\Events\RoleDetachedEvent;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -38,7 +41,26 @@ class AppServiceProvider extends ServiceProvider
         // tidak bisa dipakai.
         Event::listen(DiagnosingHealth::class, DiagnoseApplicationHealth::class);
 
+        $this->registerRoleAssignmentAudit();
+
         $this->warnWhenScheduleTimezoneIsNotConfigured();
+    }
+
+    /**
+     * Catat perubahan peran ke jejak audit.
+     *
+     * Diaktifkan lewat `permission.events_enabled` karena Spatie hanya
+     * memancarkan event peran bila sakelar tersebut aktif. Tanpanya, kolom
+     * `roles` pada audit `user.created` selalu kosong: Spatie menunda
+     * `assignRole()` sampai event `saved`, jadi saat `created` dipanggil
+     * pivot peran belum ada.
+     */
+    protected function registerRoleAssignmentAudit(): void
+    {
+        config(['permission.events_enabled' => true]);
+
+        Event::listen(RoleAttachedEvent::class, [RoleAssignmentObserver::class, 'roleAttached']);
+        Event::listen(RoleDetachedEvent::class, [RoleAssignmentObserver::class, 'roleDetached']);
     }
 
     /**
@@ -52,6 +74,10 @@ class AppServiceProvider extends ServiceProvider
      * Hanya peringatan, bukan exception: timezone UTC tetap sah untuk
      * instalasi lain, dan menggagalkan boot karena nilai yang sebenarnya
      * tidak salah hanya akan menutupi masalah lain yang lebih serius.
+     */
+
+    /**
+     * Peringatkan saat zona waktu aplikasi masih bawaan UTC.
      */
     protected function warnWhenScheduleTimezoneIsNotConfigured(): void
     {
