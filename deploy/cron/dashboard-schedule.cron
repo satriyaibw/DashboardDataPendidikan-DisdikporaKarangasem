@@ -42,6 +42,14 @@
 #   tiap jam    metabase:check-embedding
 #   Senin 05:00 security:scan-pii
 #
-# >> mengarahkan stdout/stderr ke syslog agar error tidak menumpuk
-#    di mail root. Pesan cron tetap masuk ke /var/log/syslog.
-* * * * * cd <path-repo>/dashboard-karangasem && php artisan schedule:run >> /dev/null 2>&1
+# stdout/stderr dibuang ke /dev/null, bukan ke syslog. `schedule:run` yang
+# berhasil tidak menghasilkan output, sedangkan job yang benar-benar berjalan
+# sudah menulis detailnya sendiri ke storage/logs/laravel.log — sehingga
+# meneruskan output ke syslog hanya menambah duplikasi, bukan informasi.
+#
+# `|| logger` tetap diperlukan. Kalau cron ini dibiarkan membuang semua
+# output, kegagalan yang tidak pernah sampai ke log aplikasi — PHP fatal,
+# class hilang, container mati — akan benar-benar tidak terlihat: `/up`
+# masih balas 200 karena yang mati adalah proses scheduler-nya, bukan
+# aplikasinya. Kegagalan itu diteruskan ke syslog bertag `dashboard-schedule`.
+* * * * * cd <path-repo>/dashboard-karangasem && php artisan schedule:run >> /dev/null 2>&1 || logger -t dashboard-schedule "schedule:run gagal (exit $?); periksa storage/logs/laravel.log"

@@ -75,6 +75,18 @@ APP_DB_CONTAINER=5fcf107274ae... ./deploy/backup/run-backup.sh
 4. **Direktori backup ber-mode `700`, file dump `600`** — isinya memuat email,
    hash password, dan catatan VIP.
 5. **Rotasi 14 harian + 4 mingguan** dijalankan setelah dump hari ini selesai.
+6. **Setiap baris log ditulis tepat satu kali.** `backup_log()` menulis ke
+   `BACKUP_LOG_FILE` **dan** ke stderr, jadi cron jangan pernah mengarahkan
+   stderr ke `backup.log` — setiap pesan akan keluar dua kali. Contoh cron
+   resmi membuang output ke `/dev/null` karena skrip sudah menulis lognya
+   sendiri; lihat `deploy/cron/dashboard-backup.cron`.
+
+> **Penting soal cron.** Mengarahkan output cron ke `/dev/null` berarti
+> stdout *dan* stderr hilang, termasuk pesan `backup_die` saat container
+> hilang. Itu sebabnya contoh cron memakai `|| logger -t dashboard-backup`:
+> detail kegagalan tetap ada di `backup.log`, sedangkan penanda kegagalan
+> masuk syslog supaya tidak senyap. Jangan disederhanakan menjadi
+> `>> /dev/null 2>&1` saja.
 
 ---
 

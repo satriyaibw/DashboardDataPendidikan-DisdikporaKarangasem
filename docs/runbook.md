@@ -278,6 +278,26 @@ docker exec dashboard-karangasem-pgsql-1 psql -U app -d app_db \
   -c "SELECT * FROM cache WHERE key LIKE '%mutex%';"   # sisa lock
 ```
 
+### Kegagalan cron yang tidak muncul di log aplikasi
+
+`deploy/cron/dashboard-schedule.cron` membuang stdout/stderr `schedule:run` ke
+`/dev/null` dan hanya meneruskan **exit code non-nol** ke syslog. Job yang
+berhasil tidak menghasilkan output, dan detail setiap job sudah ditulis ke
+`storage/logs/laravel.log`.
+
+Konsekuensinya perlu dipahami: kegagalan yang tidak pernah sampai ke log
+aplikasi — PHP fatal, class hilang, container mati — **tidak akan terlihat di
+sana**, karena proses yang mati adalah scheduler-nya, bukan aplikasinya.
+`/up` tetap membalas 200 dalam kondisi itu. Syslog adalah satu-satunya
+jejaknya:
+
+```bash
+grep dashboard-schedule /var/log/syslog | tail
+```
+
+Karena itu `logger` harus ada di `PATH` server. Kalau tidak, kegagalan cron
+hilang tanpa jejak.
+
 ---
 
 ## 9. Masalah umum
@@ -290,7 +310,9 @@ docker exec dashboard-karangasem-pgsql-1 psql -U app -d app_db \
 | Akun VIP masih bisa masuk padahal masa aktif habis | Job 00:30 belum jalan | `php artisan vip:deactivate-expired`, periksa cron §8 |
 | `/up` balas 500 | DB/cache/disk bermasalah | `Log::warning 'Health check gagal.'` menyebut komponennya; pesan asli hanya ada di log, bukan di respons |
 | Scheduler tidak jalan sama sekali | Cron tidak terpasang | `crontab -l`, §8 |
+| Kegagalan cron tidak terlihat | Output dibuang, `logger` tidak terpasang | `logger` harus ada di PATH; cek `syslog \| grep dashboard-schedule` |
 | `onOneServer` tidak mengunci | `CACHE_STORE` diganti `array`/`file` | Kembalikan ke `database` |
+| Backup berjalan tapi tiap baris log dobel | Cron diarahkan ke `backup.log` yang sama dengan tujuan tulis skrip | Pakai contoh cron di `deploy/cron/dashboard-backup.cron` (output ke `/dev/null`, kegagalan ke `logger`) |
 | Login admin masuk loop MFA | Secret TOTP tidak tersimpan | Panel mewajibkan MFA — selesaikan di halaman setup |
 | Backup berhenti tiap malam | Permission direktori / socket docker | Jalankan manual, baca `storage/logs/backup.log` |
 | Panel admin 500 setelah ubah `.env` | `config:cache` masih menyimpan nilai lama | `php artisan config:clear` |

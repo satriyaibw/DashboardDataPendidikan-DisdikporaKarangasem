@@ -37,6 +37,14 @@
 
 # 02:00, tiap hari.
 #
-# >> ditulis ulang tiap eksekusi supaya log tidak pernah hilang.
-#    2>&1 masuk ke dalam >> agar pesan dari stderr ikut terarsip.
-0 2 * * * cd <path-repo> && ./deploy/backup/run-backup.sh >> dashboard-karangasem/storage/logs/backup.log 2>&1
+# Output skrip dibuang ke /dev/null, BUKAN di-append ke backup.log.
+# `backup_log()` di lib.sh sudah menulis setiap baris ke backup.log DAN ke
+# stderr, jadi mengarahkan stderr ke file yang sama akan menulis setiap
+# pesan dua kali — sudah diuji: tiap baris keluar 2x saat dijalankan lewat
+# cron. Log tetap utuh di backup.log karena skrip yang menuliskannya.
+#
+# `|| logger` menutup lubang yang lain: kegagalannya (termasuk `cd` yang
+# gagal) tidak pernah sampai ke log mana pun kalau stdout/stderr di-/dev/null,
+# padahal itulah peristiwa yang paling perlu terlihat. Exit code non-nol
+# diteruskan ke syslog bertag `dashboard-backup`.
+0 2 * * * cd <path-repo> && ./deploy/backup/run-backup.sh >> /dev/null 2>&1 || logger -t dashboard-backup "run-backup.sh gagal (exit $?); periksa dashboard-karangasem/storage/logs/backup.log"
