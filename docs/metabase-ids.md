@@ -62,8 +62,11 @@ METABASE_SITE_URL=http://localhost:3000
    Perintah ini memvalidasi konfigurasi lewat service yang sama dengan yang
    dipakai produksi (tanpa menduplikasi aturan validasi), lalu memuat satu URL
    bertanda tangan dan melaporkan status HTTP. Exit code `1` bila konfigurasi
-   tidak valid, `0` bila Metabase membalas bukan 5xx. Secret dan token **tidak
-   pernah ikut tercetak** di output maupun log.
+   tidak valid **atau** Metabase menjawab 4xx/5xx, dan `0` hanya bila
+   Metabase menjawab 2xx/3xx. Respons 401/403 adalah tanda paling umum bahwa
+   embedding belum aktif atau secret tidak identik dengan
+   `MB_EMBEDDING_SECRET_KEY`. Secret dan token **tidak pernah ikut tercetak**
+   di output maupun log.
 6. Uji manual: buka halaman publik dan halaman VIP, pastikan iframe dashboard
    tetap tampil (bukan "Embedding is not enabled for this object" / 401).
 

@@ -6,7 +6,9 @@ use App\Models\User;
 use Filament\Auth\MultiFactor\App\AppAuthentication;
 use Filament\Auth\Pages\Login;
 use Filament\Facades\Filament;
+use Illuminate\Contracts\Cache\LockProvider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Role;
@@ -32,6 +34,33 @@ class AdminMultiFactorAuthenticationTest extends TestCase
         $user->assignRole('vip');
 
         return $user;
+    }
+
+    /**
+     * Pencegahan pemakaian ulang kode TOTP menyimpan timestep kode terakhir
+     * yang diterima di cache, dan mengambilnya dengan lock.
+     *
+     * Store `array` memang mengimplementasikan LockProvider, tetapi
+     * isinya hanya hidup di dalam satu proses: dua permintaan bersamaan
+     * di proses berbeda tidak saling melihat, dan catatan timestep tidak
+     * terbagi. Test karena itu wajib memakai store yang sama dengan
+     * produksi. Guard berikut mencegah CACHE_STORE di phpunit.xml
+     * diam-diam dikembalikan ke `array` sehingga jalur ini tidak lagi
+     * benar-benar teruji.
+     */
+    public function test_the_cache_store_is_shared_across_processes_for_mfa(): void
+    {
+        $this->assertNotSame(
+            'array',
+            config('cache.default'),
+            'Cache store `array` hanya hidup per-proses; test MFA harus memakai store produksi (database).',
+        );
+
+        $this->assertInstanceOf(
+            LockProvider::class,
+            Cache::store()->getStore(),
+            'Pencegahan pemakaian ulang kode TOTP memerlukan cache store yang menyediakan lock.',
+        );
     }
 
     /**

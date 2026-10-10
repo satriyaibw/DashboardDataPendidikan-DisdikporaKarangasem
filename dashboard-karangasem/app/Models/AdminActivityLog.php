@@ -10,11 +10,16 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class AdminActivityLog extends Model
 {
     /**
-     * Hanya kolom aman yang boleh diisi massal. Nilai sensitif (password,
-     * token, recovery code) sengaja tidak pernah menjadi fillable.
+     * Kolom yang boleh diisi massal didefinisikan oleh atribut `#[Fillable]`
+     * di atas. Sengaja tidak ada `$guarded = []` di sini: kombinasi
+     * `$guarded = []` dengan daftar fillable terlihat seperti dua kali
+     * menyatakan semua kolom fillable, dan kalau atribut Fillable suatu saat diabaikan
+     * (mis. saat model di-refactor ke gaya property biasa) seluruh kolom —
+     * termasuk `properties` dan `actor_id` — ikut terbuka tanpa disadari.
+     *
+     * Nilai sensitif (password, token, recovery code) juga tidak pernah
+     * menjadi fillable.
      */
-    protected $guarded = [];
-
     protected function casts(): array
     {
         return [

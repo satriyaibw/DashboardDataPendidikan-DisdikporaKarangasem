@@ -120,11 +120,24 @@ class AdminActivityLogger
 
     /**
      * Bulatkan nilai menjadi skalar yang aman disimpan pada kolom json.
+     *
+     * Nilai tanggal/waktu disimpan sebagai ISO 8601 **dengan offset zona
+     * waktu** (mis. `2026-11-09T12:00:00+08:00`). Bentuk `Y-m-d H:i:s` yang
+     * dihasilkan `__toString()` Carbon tidak dipakai karena tidak menyebut
+     * zona waktu: pembaca audit tidak bisa memastikan itu UTC atau waktu
+     * server, sehingga "masa berlaku diubah pukul berapa" tidak dapat
+     * dibuktikan. Format eksplisit juga tidak ambigu saat dibaca mesin.
      */
     protected static function scalar(mixed $value): string|bool|null
     {
         if (is_bool($value)) {
             return $value;
+        }
+
+        // Instans date/time (Carbon hasil cast `datetime`) selalu diformalkan
+        // lebih dulu agar sebelum/sesudah memakai format yang sama.
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format(\DateTimeInterface::ATOM);
         }
 
         if (is_scalar($value)) {

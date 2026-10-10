@@ -7,7 +7,12 @@ use App\Filament\Resources\Users\Pages\EditUser;
 use App\Filament\Resources\Users\Pages\ListUsers;
 use App\Models\AdminActivityLog;
 use App\Models\User;
+use App\Services\AdminActivityLogger;
+use App\Services\TrustedProxyList;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Facade;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Role;
 use Tests\Concerns\HasAdminUser;
@@ -165,6 +170,109 @@ class AdminActivityLogTest extends TestCase
 
         $this->assertNotNull($log->user_agent);
         $this->assertNotNull($log->ip);
+    }
+
+    /**
+     * Nilai tanggal/waktu pada audit log harus ISO 8601 dengan offset zona
+     * waktu, dan `before`/`after` harus memakai format yang sama supaya
+     * perubahan masa berlaku bisa dibandingkan dan dibaca tanpa tebakan.
+     */
+    public function test_datetime_changes_are_recorded_as_iso_8601_with_offset(): void
+    {
+        $admin = $this->adminUserWithMultiFactorAuthentication();
+
+        $user = User::factory()->create([
+            'expires_at' => now()->addDays(30),
+            'is_active' => true,
+        ]);
+
+        Livewire::actingAs($admin)
+            ->test(ListUsers::class)
+            ->callTableAction('perpanjang', $user)
+            ->assertHasNoTableActionErrors();
+
+        $log = $user->adminActivityLogs()->where('action', 'user.updated')->sole();
+
+        $pattern = '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/';
+
+        $before = $log->properties['expires_at']['before'];
+        $after = $log->properties['expires_at']['after'];
+
+        $this->assertMatchesRegularExpression($pattern, $before, 'Nilai sebelum harus ISO 8601 dengan offset.');
+        $this->assertMatchesRegularExpression($pattern, $after, 'Nilai sesudah harus ISO 8601 dengan offset.');
+
+        // Offset harus benar-benar menyertakan zona waktu; string tanpa
+        // offset akan lolos pemeriksaan panjang tetapi ambigu.
+        $this->assertNotNull(
+            Carbon::parse($before)->getOffset(),
+            'Nilai audit harus menyimpan offset zona waktu.'
+        );
+    }
+
+    public function test_audit_uses_the_client_ip_from_a_trusted_proxy(): void
+    {
+        $admin = $this->adminUserWithMultiFactorAuthentication();
+        $user = User::factory()->create();
+
+        $this->withRequest(
+            $this->proxiedRequest(server: ['REMOTE_ADDR' => '127.0.0.1'], forwardedFor: '203.0.113.10'),
+        );
+
+        AdminActivityLogger::log('user.updated', $user, ['is_active' => ['before' => true, 'after' => false]]);
+
+        $this->assertSame('203.0.113.10', AdminActivityLog::query()->sole()->ip);
+    }
+
+    /**
+     * Header X-Forwarded-Hanya dipercaya bila proxy-nya terdaftar. Membaca
+     * header itu langsung tanpa validasi akan membuat IP pada audit log bisa
+     * dipalsukan oleh klien mana pun.
+     */
+    public function test_audit_ignores_forwarded_ip_from_an_untrusted_proxy(): void
+    {
+        $admin = $this->adminUserWithMultiFactorAuthentication();
+        $user = User::factory()->create();
+
+        $this->withRequest(
+            $this->proxiedRequest(server: ['REMOTE_ADDR' => '198.51.100.7'], forwardedFor: '203.0.113.10'),
+        );
+
+        AdminActivityLogger::log('user.updated', $user, ['is_active' => ['before' => true, 'after' => false]]);
+
+        $this->assertSame('198.51.100.7', AdminActivityLog::query()->sole()->ip);
+    }
+
+    /**
+     * Request yang tampak datang dari proxy tepercaya (127.0.0.1), dengan
+     * daftar proxy diambil dari bootstrap/app.php memakai TRUSTED_PROXIES.
+     */
+    protected function proxiedRequest(array $server, string $forwardedFor): Request
+    {
+        $request = Request::create(
+            '/admin/users',
+            'GET',
+            server: $server + [
+                'HTTP_X_FORWARDED_FOR' => $forwardedFor,
+                'HTTP_USER_AGENT' => 'AuditProbe/1.0',
+            ],
+        );
+
+        $request->setTrustedProxies(
+            TrustedProxyList::fromEnvironment(),
+            Request::HEADER_X_FORWARDED_FOR,
+        );
+
+        return $request;
+    }
+
+    /**
+     * Pasang request sebagai request "saat ini" supaya facade Request
+     * (dipakai AdminActivityLogger) melihatnya.
+     */
+    protected function withRequest(Request $request): void
+    {
+        $this->app->instance('request', $request);
+        Facade::clearResolvedInstance('request');
     }
 
     public function test_audit_prune_removes_only_old_entries(): void

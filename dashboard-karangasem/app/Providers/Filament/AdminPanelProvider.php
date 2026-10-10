@@ -36,9 +36,11 @@ class AdminPanelProvider extends PanelProvider
             // Kode pemulihan (recovery codes) disertakan supaya admin yang
             // kehilangan perangkat TOTP tidak permanen terkunci dari panel.
             //
-            // CATATAN: butuh cache store yang mendukung atomic lock
-            // (database/redis) agar kode TOTP tidak bisa dipakai dua kali.
-            // CACHE_STORE=database sudah memenuhi syarat ini.
+            // CATATAN: pencegahan pemakaian ulang kode TOTP menyimpan
+            // timestep kode terakhir di cache lalu membacanya di bawah lock.
+            // Cache store harus BERBAGI antar proses (database/redis/
+            // memcached); `array` tidak, sehingga catatan timestep hilang
+            // antar permintaan. CACHE_STORE=database sudah memenuhi.
             ->multiFactorAuthentication([
                 AppAuthentication::make(),
             ], isRequired: true)

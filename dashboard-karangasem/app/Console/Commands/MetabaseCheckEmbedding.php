@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Services\MetabaseEmbedService;
+use App\Services\SafeErrorMessage;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Http;
 use Throwable;
@@ -65,9 +66,11 @@ class MetabaseCheckEmbedding extends Command
     protected function probeSignedUrl(MetabaseEmbedService $metabase): int
     {
         try {
-            $response = Http::timeout(self::REQUEST_TIMEOUT_SECONDS)->get($metabase->signedUrl());
+            $response = Http::connectTimeout(self::REQUEST_TIMEOUT_SECONDS)
+                ->timeout(self::REQUEST_TIMEOUT_SECONDS)
+                ->get($metabase->signedUrl());
         } catch (Throwable $e) {
-            $this->error('Gagal menghubungi Metabase: '.$e->getMessage());
+            $this->error('Gagal menghubungi Metabase: '.SafeErrorMessage::for($e));
 
             return self::FAILURE;
         }
@@ -76,14 +79,46 @@ class MetabaseCheckEmbedding extends Command
 
         $this->line('Status respons embed: '.$status);
 
-        if ($response->serverError()) {
-            $this->error('Metabase membalas 5xx — embed tidak dapat dilayani.');
+        // Hanya 2xx/3xx yang berarti embed benar-benar dapat dilayani.
+        //
+        // Respons 4xx justru tanda miskonfigurasi yang paling sering terjadi
+        // di sini: embedding belum diaktifkan di sisi Metabase, atau token
+        // ditolak karena secret tidak identik dengan MB_EMBEDDING_SECRET_KEY.
+        // Aturan lama "selain 5xx berarti aman" membuat verifikasi ini
+        // melaporkan keberhasilan tepat pada saat embed-nya rusak.
+        if ($response->clientError()) {
+            $this->error($this->clientErrorExplanation($status));
 
             return self::FAILURE;
         }
 
-        $this->info('Metabase menanggapi permintaan embed (5xx berarti kegagalan, selain itu dianggap dapat dilayani).');
+        if ($response->serverError()) {
+            $this->error('Metabase membalas 5xx - embed tidak dapat dilayani.');
+
+            return self::FAILURE;
+        }
+
+        $this->info('Metabase menanggapi permintaan embed (2xx/3xx berarti dapat dilayani).');
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Petunjuk penyebab berdasarkan status, tanpa pernah membocorkan URL
+     * bertanda tangan maupun secret.
+     */
+    protected function clientErrorExplanation(int $status): string
+    {
+        return match ($status) {
+            401, 403 => sprintf(
+                'Metabase membalas %d - embedding ditolak. Periksa: embedding aktif di Metabase, '
+                .'METABASE_EMBEDDING_SECRET identik dengan MB_EMBEDDING_SECRET_KEY, '
+                .'dan Allowed domains untuk iframes memuat domain aplikasi.',
+                $status
+            ),
+            404 => 'Metabase membalas 404 - endpoint /embed/dashboard tidak ditemukan. '
+                .'Periksa versi Metabase dan METABASE_VIP_DASHBOARD_ID.',
+            default => sprintf('Metabase membalas %d - embed tidak dapat dilayani.', $status),
+        };
     }
 }

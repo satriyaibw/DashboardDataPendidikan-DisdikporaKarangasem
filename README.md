@@ -160,7 +160,7 @@ terdokumentasi di `docs/metabase-ids.md`.
 + `pint --test`, dijalankan pada push/PR dan jadwal mingguan. Tanpa dependensi
 runtime baru.
 
-**Verifikasi:** `dashboard-karangasem` punya **138 test** (T20–T32 sesuai
+**Verifikasi:** `dashboard-karangasem` punya **182 test** (T20–T32 sesuai
 matriks Issue #9). Jalankan:
 
 ```bash

@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Services\MetabaseEmbedService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -116,6 +117,99 @@ class MetabaseCheckEmbeddingTest extends TestCase
         $this->artisan('metabase:check-embedding')
             ->expectsOutputToContain('Status respons embed: 503')
             ->assertFailed();
+    }
+
+    /**
+     * 401/403 adalah tanda paling umum embedding salah konfigurasi
+     * (embedding belum aktif, atau secret tidak identik). Menyebutnya sukses
+     * membuat verifikasi melaporkan embed sehat padahal iframe rusak.
+     */
+    #[DataProvider('clientErrorStatuses')]
+    public function test_command_fails_when_metabase_answers_a_client_error(int $status): void
+    {
+        $this->configureMetabase();
+
+        Http::fake(['*' => Http::response('', $status)]);
+
+        $this->artisan('metabase:check-embedding')
+            ->expectsOutputToContain('Status respons embed: '.$status)
+            ->assertFailed();
+    }
+
+    /**
+     * @return array<string, array{0: int}>
+     */
+    public static function clientErrorStatuses(): array
+    {
+        return [
+            'unauthorized' => [401],
+            'forbidden' => [403],
+            'not found' => [404],
+            'teapot' => [418],
+        ];
+    }
+
+    public function test_command_explains_a_rejected_token_without_leaking_it(): void
+    {
+        $this->configureMetabase();
+
+        Http::fake(['*' => Http::response('', 401)]);
+
+        $secret = config('metabase.embedding_secret');
+
+        Artisan::call('metabase:check-embedding');
+
+        $output = Artisan::output();
+
+        $this->assertStringContainsString('embedding ditolak', $output);
+        $this->assertStringContainsString('MB_EMBEDDING_SECRET_KEY', $output);
+        $this->assertStringNotContainsString($secret, $output, 'Secret embedding tidak boleh ikut tercetak.');
+        $this->assertStringNotContainsString(
+            app(MetabaseEmbedService::class)->signedUrl(),
+            $output,
+            'URL bertanda tangan tidak boleh ikut tercetak.',
+        );
+    }
+
+    public function test_command_accepts_a_redirect_as_servable(): void
+    {
+        $this->configureMetabase();
+
+        // Metabase bisa mengalihkan ke halaman login; 3xx bukan kegagalan
+        // konfigurasi, jadi tidak boleh diperlakukan sama dengan 4xx.
+        Http::fake(['*' => Http::response('', 302)]);
+
+        $this->artisan('metabase:check-embedding')->assertSuccessful();
+    }
+
+    /**
+     * Jalur kegagalan koneksi adalah tempat token bocor: pesan error Guzzle
+     * memuat URL permintaan lengkap, dan URL yang diminta perintah ini adalah
+     * `/embed/dashboard/{token}`. Test sebelumnya hanya menutup jalur sukses,
+     * sehingga kebocoran ini lolos.
+     */
+    public function test_command_output_never_leaks_the_token_when_the_connection_fails(): void
+    {
+        $this->configureMetabase();
+
+        Http::fake(function () {
+            throw new ConnectionException(
+                'cURL error 7: Failed to connect to metabase.test port 443 '
+                .'for http://metabase.test/embed/dashboard/token-rahasia-yang-panjang'
+            );
+        });
+
+        Artisan::call('metabase:check-embedding');
+
+        $output = Artisan::output();
+
+        $this->assertStringContainsString('Gagal menghubungi Metabase', $output);
+        $this->assertStringNotContainsString(
+            'token-rahasia-yang-panjang',
+            $output,
+            'Token pada URL permintaan tidak boleh ikut tercetak saat koneksi gagal.',
+        );
+        $this->assertStringNotContainsString('http://', $output, 'URL tidak boleh ikut tercetak.');
     }
 
     public function test_command_output_never_leaks_the_secret_or_the_token(): void

@@ -90,6 +90,16 @@ return [
     // setelah domain akan berhenti melayani HTTPS.
     'hsts_max_age' => (int) env('HSTS_MAX_AGE', 31536000),
 
+    // Sertakan direktif `includeSubDomains` pada header HSTS.
+    //
+    // Default TIDAK menyertakannya: direktif ini memaksa seluruh subdomain
+    // ikut memakai HTTPS. Mengaktifkannya sebelum semua subdomain siap
+    // membuat subdomain yang belum TLS tidak dapat diakses sama sekali
+    // (browser menolak sebelum sempat melakukan request), dan seperti HSTS
+    // itu sendiri, pencabutannya jauh lebih lambat daripada pengaktifan.
+    // Nyalakan hanya setelah dipastikan seluruh subdomain sudah HTTPS.
+    'hsts_include_subdomains' => (bool) env('HSTS_INCLUDE_SUBDOMAINS', false),
+
     /*
     |--------------------------------------------------------------------------
     | Application Timezone
