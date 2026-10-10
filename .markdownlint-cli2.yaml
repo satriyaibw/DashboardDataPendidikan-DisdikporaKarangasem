@@ -1,0 +1,21 @@
+# Konfigurasi markdownlint untuk seluruh dokumentasi repo.
+#
+# Repo ini memakai tabel markdown secara luas (tech stack, matriks UAT, jadwal
+# scheduler, tabel gejala -> aksi). Baris tabel tidak bisa di-wrap tanpa
+# merusak kolomnya, sehingga aturan MD013 (line-length) dinonaktifkan di sini
+# alih-alih memaksa setiap tabel jadi kode blok.
+#
+# Docs yang akan divalidasi:/*.md (root) dan docs/**/*.md.
+config:
+  MD013: false
+
+globs:
+  - "*.md"
+  - "docs/**/*.md"
+  - "deploy/**/*.md"
+
+ignores:
+  - "dashboard-karangasem/node_modules/**"
+  - "dashboard-karangasem/vendor/**"
+
+noBanner: true

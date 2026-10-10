@@ -1,254 +1,184 @@
 # Dashboard Data Pendidikan — Disdikpora Kabupaten Karangasem
 
-Rencana dan implementasi **Dashboard Data Pendidikan Kabupaten Karangasem**.
+Portal analytics pendidikan Kabupaten Karangasem: dashboard agregat untuk publik, dashboard analitik eksklusif untuk pengguna VIP, dan panel administrasi akun.
 
-- **Publik:** dashboard agregat non-sensitif tanpa login.
-- **VIP:** dashboard analitik eksklusif dengan masa aktif berbatas waktu.
-- **Admin:** pengelolaan akun VIP via panel admin.
+[![Laravel](https://img.shields.io/badge/Laravel-13.17-FF2D20?style=flat&logo=laravel&logoColor=white)](https://laravel.com)
+[![PHP](https://img.shields.io/badge/PHP-8.5-777BB4?style=flat&logo=php&logoColor=white)](https://php.net)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18-4169E1?style=flat&logo=postgresql&logoColor=white)](https://postgresql.org)
+[![Metabase](https://img.shields.io/badge/Metabase-OSS%20v0.55.4-0052A4?style=flat)](https://www.metabase.com)
+[![Filament](https://img.shields.io/badge/Filament-5-FDB022?style=flat&logo=filament&logoColor=black)](https://filamentphp.com)
+
+Dokumen kunci: **[`MasterPlan.md`](./MasterPlan.md)** (rencana 7 fase) · **[`docs/runbook.md`](./docs/runbook.md)** (operasional harian).
+
+## Tentang Proyek
+
+Sistem ini menyajikan data pendidikan Kabupaten Karangasem — peserta didik, rombongan belajar, dan PTK — yang selama ini tersebar di database Pusdatin (`backbone_client`) sehingga sulit ditelusuri oleh publik.
+
+Arsitekturnya sengaja memisahkan tanggung jawab: **Metabase** menjadi mesin analitik yang membaca data sumber secara read-only, sedangkan **Laravel** menjadi pembungkus web yang mengatur autentikasi, kontrol akses, dan penyajian. Laravel tidak pernah menyentuh `backbone_client`; satu-satunya basis data yang diaksesnya adalah `app_db` untuk data pengguna, sesi, dan audit.
+
+| Peran | Akses | URL |
+| --- | --- | --- |
+| Publik | Agregat non-sensitif, tanpa login | `/` |
+| VIP | Agregat detail, login + masa aktif | `/vip/dashboard` |
+| Admin | Manajemen pengguna VIP via Filament | `/admin` |
+
+## Fitur Utama
+
+**Dashboard Publik** — agregat peserta didik, rombongan belajar, dan PTK per kecamatan serta jenjang, dilayani public embed tanpa token.
+
+**Dashboard VIP** — analitik lebih mendalam dengan PII terbatas, dilayani signed embed (JWT HS256, TTL pendek) dan refresh token otomatis sebelum kedaluwarsa.
+
+**Panel Admin** — CRUD pengguna VIP, pengaturan peran, pencatatan audit aktivitas, dan MFA TOTP wajib.
+
+**Keamanan** — CSP per-rute, HSTS, rate limit per rute, kebijakan kata sandi, audit log whitelist, serta pemindaian PII terjadwal.
+
+**Operasional** — scheduler terjadwal, backup/restore dengan restore drill, health check `/up`, dan log JSON terstruktur dengan request ID.
 
 ## Tech Stack
 
-| Layer | Teknologi |
-| --- | --- |
-| Database | PostgreSQL (existing Pusdatin, schema `datamart`/`dbo`/`ref`) |
-| Analytics | Metabase (self-hosted, Docker) |
-| Web wrapper | Laravel |
-| Admin panel | Filament |
-| RBAC | Spatie Permission |
-| Embedding | Metabase Guest/Static Embedding (JWT, HS256) |
+| Layer | Teknologi | Versi | Keterangan |
+| --- | --- | --- | --- |
+| Data sumber | PostgreSQL | 16.x | `backbone_client` milik Pusdatin, dibaca read-only oleh Metabase |
+| Kontrak data | PostgreSQL | 16.x | Schema `metrics` — view agregat dengan bentuk *long* |
+| Metadata DB | PostgreSQL | 16.x / 18 | `metabase_postgres` (Metabase) dan `app_db` (aplikasi, Postgres 18 di CI) |
+| Analytics | Metabase OSS | v0.55.4 | Self-hosted via Docker Compose, 3 dashboard |
+| Backend | Laravel | 13.x | Membungkus & mengontrol akses |
+| Admin panel | Filament | 5.x | Panel `/admin`, Terbatas role `admin` |
+| RBAC | Spatie Permission | 8.x | Peran `admin` & `vip` |
+| Embedding | Metabase Static Embed | — | JWT HS256, TTL 600 detik |
+| Runtime | PHP | 8.5 | Ekstensi: cURL, PDO, mbstring, openssl, xml |
+| CI | GitHub Actions | — | `composer audit` + test + `pint` (`.github/workflows/security.yml`) |
 
-## Dokumen
+## Struktur Direktori
 
-- [`MasterPlan.md`](./MasterPlan.md) — rencana global final & panduan eksekusi.
-- [`docs/data-dictionary.md`](./docs/data-dictionary.md) — data dictionary `backbone_client`.
-- [`docs/security-checklist.md`](./docs/security-checklist.md) — checklist & prosedur verifikasi Fase 5 (keamanan, privasi, rotasi secret).
-- [`docs/read-only-test.md`](./docs/read-only-test.md) — hasil uji akses `analis`.
-- [`docs/migration-datamart.md`](./docs/migration-datamart.md) — prosedur cutover ke `datamart`.
-- [`docs/runbook.md`](./docs/runbook.md) — **runbook operasional** (Fase 6): arsitektur, restart, rotasi secret, backup/restore, jadwal harian, masalah umum, insiden.
-- [`deploy/backup/README.md`](./deploy/backup/README.md) — cara pakai skrip backup & restore drill.
+```text
+.
+├── dashboard-karangasem/     # Aplikasi Laravel + Filament + Sail
+├── database/
+│   └── sql/                  # DDL view metrics, role DB, uji kesetaraan
+├── deploy/
+│   ├── backup/               # Skrip backup harian & restore drill
+│   ├── cron/                 # Contoh crontab scheduler & backup
+│   ├── metabase/             # Docker Compose Metabase
+│   └── nginx/                # Contoh reverse proxy
+├── docs/                     # Dokumentasi teknis (runbook, security, UAT)
+└── MasterPlan.md             # Rencana global 7 fase
+```
 
-## Fase 1 — Data Layer (Status: SELESAI)
+## Quick Start (Development)
 
-- Schema kontrak `metrics` + view stabil (bentuk long):
-  - `metrics.v_peserta_didik` — PD aktif per semester × kecamatan × jenjang × jk
-  - `metrics.v_rombongan_belajar` — rombel & anggotanya per semester × kecamatan × tingkat
-  - `metrics.v_ptk` — PTK terdaftar per tahun ajaran × kecamatan × jenis PTK
-- DDL idempotent: `database/sql/metrics_views.sql` (GRANT ke role `analis`).
-- Uji kesetaraan angka gateway cutover: `database/sql/test_equivalence.sql`.
-- Materialized View: **belum diperlukan** — view kontrak saat ini ringan
-  (hasil agregat kecil); bila kelak lambat, buat `mv_*.sql` dengan UNIQUE
-  INDEX agar `REFRESH ... CONCURRENTLY` valid (lihat MasterPlan §5.5).
-
-## Fase 2 — Metabase (Status: SELESAI)
-
-- Metabase OSS + PostgreSQL metadata via Docker Compose (`deploy/metabase/docker-compose.yml`).
-- 1 koneksi database: `backbone_admin` (admin_full, query native ke semua schema).
-- 3 role akses:
-  - **Admin**: full view, query native, read-only (no DELETE/EDIT).
-  - **VIP**: lihat PII melalui dashboard VIP yang disiapkan admin, tidak bisa query native.
-  - **Public**: agregat saja, tanpa PII.
-- Role admin: `database/sql/admin_full_role.sql`.
-- Dokumentasi: `docs/metabase-ids.md`.
-
-
-## Fase 3 — Laravel + Filament (Status: SELESAI)
-
-- Project Laravel 13 di subdirektori `dashboard-karangasem/` (PHP 8.5, `composer.lock` ter-commit).
-- DB aplikasi terpisah `app_db` (user `app`, non-superuser); Laravel tidak menyentuh `backbone_client`.
-- Spatie Permission: role `admin` & `vip`; seeder admin awal (email/password dari env `ADMIN_EMAIL`/`ADMIN_PASSWORD`).
-- Filament 5 panel `/admin` dibatasi via `FilamentUser::canAccessPanel()` → role `admin`.
-- Kolom user: `expires_at` (index), `is_active`, `vip_notes`.
-- `UserResource`: CRUD user VIP, badge status Aktif/Kedaluwarsa/Nonaktif, action Perpanjang 30 hari & Aktif/Nonaktifkan, filter role & status.
-- Middleware `CheckVipAccess` (`check.vip`) pada grup `/vip/*`: login → role vip → is_active → expires_at null/>now; gagal → logout + redirect + pesan; tanpa tulis DB.
-- Login VIP custom minimal (`/login`, `/vip/login`, rate limit, throttle); health `GET /up`.
-- Feature tests T2–T8: `php artisan test` (10 passed).
-
-### Menjalankan (Docker / Laravel Sail)
+**Prasyarat:** Docker + Docker Compose, Git, dan akses read-only ke `backbone_client` (atau stub lokal untuk pengembangan). Seluruh perintah dijalankan dari direktori `dashboard-karangasem/`.
 
 ```bash
-cd dashboard-karangasem
-cp .env.example .env   # isi ADMIN_PASSWORD
+git clone https://github.com/satriyaibw/DashboardDataPendidikan-DisdikporaKarangasem.git
+cd DashboardDataPendidikan-DisdikporaKarangasem/dashboard-karangasem
+cp .env.example .env
+php artisan key:generate
+```
+
+Isi `.env` minimal: `ADMIN_EMAIL` dan `ADMIN_PASSWORD` (min. 12 karakter, huruf besar/kecil, angka — `db:seed` gagal bila lemah), `METABASE_SITE_URL`, `METABASE_EMBEDDING_SECRET` (min. 32 karakter, **wajib identik** dengan `MB_EMBEDDING_SECRET_KEY` di Metabase), serta `METABASE_PUBLIC_DASHBOARD_ID` dan `METABASE_VIP_DASHBOARD_ID`.
+
+```bash
 ./vendor/bin/sail up -d --build
 ./vendor/bin/sail artisan migrate --seed
+./vendor/bin/sail npm install && ./vendor/bin/sail npm run build
 ```
 
-- Web: http://localhost:8000 (`APP_PORT`), Postgres container di `localhost:5433` (`FORWARD_DB_PORT`).
-- Test: `./vendor/bin/sail artisan test`.
-- DB aplikasi: Postgres 18 container (service `pgsql`, db `app_db`, user `app`) — terpisah dari Postgres lokal backbone.
-- Tanpa Docker tetap bisa: `php artisan serve` dengan `DB_HOST=127.0.0.1` mengarah ke Postgres lokal.
+- Dashboard publik — <http://localhost:8000>
+- Panel admin — <http://localhost:8000/admin> (login + TOTP)
+- Metabase — <http://localhost:3000>
 
-## Fase 4 — Signed Embedding (Status: SELESAI)
+Tanpa Docker: `./vendor/bin/sail` dapat diganti `php artisan` dengan `DB_HOST=127.0.0.1` yang menunjuk ke Postgres lokal. Detail environment ada di `.env.example`.
 
-- Dashboard Publik di `/` (public embed, tanpa token) dan dashboard VIP di
-  `/vip/dashboard` (signed embed, JWT HS256 TTL pendek, auto-refresh sebelum
-  token kedaluwarsa).
-- Endpoint JSON `/vip/embed-url` untuk memperbarui token tanpa reload halaman,
-  dengan `Cache-Control: no-store, private` karena membawa token pada `src` iframe.
-- `MetabaseCspHeaders` (alias `metabase.csp`, per-rute): `frame-src` hanya
-  `'self'` + origin Metabase, plus `object-src 'none'; base-uri 'self';
-  frame-ancestors 'none'`. Berlaku untuk `/` dan `/vip/*`, **tidak** untuk
-  `/admin` agar panel Filament tidak rusak.
-- `MetabaseEmbedService`: validasi fail-closed (URL absolut http/https, tanpa
-  kredensial, secret ≥ 32 karakter, params skalar) dan TTL ≤ 0 mematikan refresh.
-- Rate limit per rute: `/` dan `/vip/dashboard` 60/menit, `/vip/embed-url` 10/menit.
+> **Penting:** `APP_DEBUG` **wajib `false`** di produksi. Route `/up` meneruskan exception apa adanya saat debug aktif sehingga halaman debug membocorkan detail internal.
 
-## Fase 5 — Privasi, Keamanan & Hardening (Status: SELESAI)
+## Cara Penggunaan
 
-Lihat **`docs/security-checklist.md`** untuk detail lengkap & cara verifikasi.
+### Sebagai Publik
 
-**Header keamanan (WS-1)** — ekstraksi `MetabaseOrigin` (dipakai bersama oleh
-CSP dan Permissions-Policy, tidak diduplikasi) dan middleware global
-`SecurityHeaders`: `X-Content-Type-Options`, `Referrer-Policy`,
-`Cross-Origin-Opener-Policy`, `Permissions-Policy` (`camera`/`microphone`/
-`geolocation`/`payment`/`usb` dimatikan, `fullscreen` mengizinkan `self` +
-origin Metabase — wajib, karena iframe Metabase cross-origin dan memakai
-`allowfullscreen`), serta `X-Frame-Options: DENY` **hanya** bila respons belum
-punya CSP (rute embed tetap mengandalkan `frame-ancestors 'none'` supaya tidak
-ada dua kebijakan framing yang bertentangan). CSP global sengaja tidak dipasang —
-akan mematikan skrip inline Livewire/Alpine pada panel Filament.
+Buka `/`. Dashboard agregat tampil langsung tanpa login, dilayani public embed Metabase. Rate limit 60 permintaan/menit.
 
-**HTTPS & HSTS (WS-2)** — `force_https`, `hsts_enabled`, `hsts_max_age`
-(default nonaktif), `URL::forceScheme('https')`, dan middleware
-`StrictTransportSecurity` yang **hanya** mengirim header pada request HTTPS +
-`HSTS_ENABLED=true` agar domain tak pernah terkunci HTTPS sebelum TLS siap.
+### Sebagai VIP
 
-**Cookie (WS-3)** — `SESSION_HTTP_ONLY`, `SESSION_SAME_SITE=lax`,
-`SESSION_SECURE_COOKIE`, `SESSION_ENCRYPT` didokumentasikan di `.env.example`.
-`config/session.php` tidak diubah (sudah membaca env tersebut).
+1. Buka `/login` (atau `/vip/login`) dan masukkan kredensial.
+2. Setelah login, Anda diarahkan ke `/vip/dashboard` — iframe signed embed.
+3. Token embed di-refresh otomatis lewat `/vip/embed-url` sebelum kedaluwarsa; kegagalan refresh ditangani diam agar halaman tidak berkedip.
+4. Masa aktif diatur admin. Saat `expires_at` lewat, job `vip:deactivate-expired` menonaktifkan akun dan middleware menolak akses.
 
-**Kebijakan password (WS-4)** — `App\Services\PasswordPolicy`: minimal 12
-karakter, huruf besar/kecil, angka. Satu definisi dipakai bersama form Filament
-dan `DatabaseSeeder` sehingga keduanya tidak pernah berbeda; `ADMIN_PASSWORD`
-yang lemah menggagalkan `db:seed` dengan pesan tersurat (fail-closed).
-Hashing tetap memakai cast bawaan `'password' => 'hashed'` (idempoten lewat
-penjaga `Hash::isHashed()` — jangan menambahkan `Hash::make()`).
+### Sebagai Admin
 
-**MFA panel admin (WS-11)** — `AdminPanelProvider` mewajibkan multi-factor
-authentication TOTP (`isRequired: true`) dengan kode pemulihan. `User`
-mengimplementasikan `HasAppAuthentication` + `HasAppAuthenticationRecovery`;
-secret terenkripsi dan tersembunyi dari serialisasi. Login VIP tidak terpengaruh.
-Butuh cache store dengan atomic lock (`database`/`redis`) — `database` sudah memenuhi.
+1. Buka `/admin`, login dengan MFA TOTP.
+2. Manajemen pengguna VIP: tambah, perpanjang 30 hari, aktif/nonaktifkan, atur peran.
+3. Setiap aksi tercatat di tabel `admin_activity_logs` beserta aktor, perubahan, IP, dan user agent.
+4. Jalankan `audit:prune --days=365` untuk memangkas log lama (terjadwal otomatis pukul 03:00 WITA).
 
-**Audit log (WS-5)** — migrasi `admin_activity_logs` + `UserObserver` +
-`AdminActivityLogger`: setiap buat/ubah/hapus user VIP tercatat dengan
-`actor_id`, `action`, perubahan `before`/`after`, `ip`, `user_agent`. Penyaringan
-kolom memakai **whitelist** (deny-by-default), bukan blacklist — atribut sensitif
-yang baru ditambahkan kelak tidak akan ikut tercatat hanya karena lupa
-memperbarui daftar hitam. Kegagalan penulisan audit tidak pernah menggagalkan
-aksi admin. `audit:prune --days=365` menyiapkan retensi (penjadwalan di Fase 6).
+## Testing & Verifikasi
 
-**Verifikasi PII (WS-6)** — `vendor/bin/sail artisan security:scan-pii` login ke
-API Metabase (session id hanya di memori, tak pernah ditulis/dicetak), memindai
-query native & field MBQL, menulis laporan ke `storage/app/security/`, dan keluar
-dengan kode non-nol bila menemukan kolom PII pada dashboard Publik/VIP.
-Pencocokan berbasis **batas kata** (`\bnama\b`), bukan substring, agar
-`nama_kecamatan` & `nama_sekolah` (agregat sah) tidak ikut ditandai.
-Model akses backbone tetap penuh; privasi dijaga di lapisan pemilihan dashboard
-oleh admin (lihat `docs/security-checklist.md` §1).
+Jalankan dari `dashboard-karangasem/`. Test suite **wajib lewat Sail** — `php artisan test` langsung di host tidak merepresentasikan lingkungan/container yang benar.
 
-**Pembatasan UI Metabase (WS-7)** — `deploy/nginx/metabase.conf` hanya
-melayani `/public/`, `/embed/`, `/api/health`; sisanya `allow <IP VPN/admin>`
-+ `deny all`. `deploy/nginx/dashboard.conf` melakukan redirect HTTP→HTTPS.
-Keduanya **file contoh** dengan domain placeholder — tidak mengubah runtime
-yang sedang berjalan. HSTS hanya di satu tempat (middleware Laravel).
+| Perintah | Tujuan | Hasil yang diharapkan |
+| --- | --- | --- |
+| `sail artisan test --compact` | Unit + feature test | `PASS  Tests: 370, Assertions: 787` |
+| `sail bin pint --test --format agent` | Gaya kode | Tanpa diff |
+| `sail composer audit` | Advisory dependensi | Tidak ada advisory |
+| `sail artisan security:scan-pii` | Pemindaian PII dashboard Publik/VIP | Exit 0, laporan di `storage/app/security/` |
+| `sail artisan metabase:check-embedding` | Validasi konfigurasi & URL bertanda tangan | Exit 0 |
+| `sail artisan schedule:list` | Verifikasi 4 job terjadwal | 4 baris jadwal tampil |
 
-**Verifikasi secret (WS-8)** — `vendor/bin/sail artisan metabase:check-embedding`
-memvalidasi konfigurasi lewat `MetabaseEmbedService` (tanpa menduplikasi aturan)
-lalu memuat satu URL bertanda tangan dan melaporkan status; secret & token tidak
-pernah ikut tercetak. Prosedur rotasi + peringatan `MB_ENCRYPTION_SECRET_KEY`
-terdokumentasi di `docs/metabase-ids.md`.
+Dua perintah terakhir memerlukan kredensial `METABASE_ADMIN_*` di `.env`. Ikuti `docs/uat.md` untuk skenario manual yang tidak dapat diotomatisasi (T9, T10).
 
-**CI (WS-9)** — `.github/workflows/security.yml`: `composer audit` + seluruh test
-+ `pint --test`, dijalankan pada push/PR dan jadwal mingguan. Tanpa dependensi
-runtime baru.
+## Debugging & Pemeliharaan
 
-**Verifikasi:** `dashboard-karangasem` punya **182 test** (T20–T32 sesuai
-matriks Issue #9). Jalankan:
+| Gejala | Aksi pertama |
+| --- | --- |
+| Iframe putih / embed mati | `sail artisan metabase:check-embedding` |
+| VIP masih bisa login padahal lewat masa aktif | `sail artisan vip:deactivate-expired` lalu periksa cron |
+| `/up` balas 500 | `grep 'Health check gagal' storage/logs/laravel.log` |
+| Perubahan `.env` tidak terlihat | `sail artisan config:clear` |
+| Scheduler tidak jalan | `crontab -l` — pastikan `schedule:run` tiap menit |
+| Backup gagal | `tail -n 20 storage/logs/backup.log` |
 
-```bash
-cd dashboard-karangasem
-vendor/bin/sail artisan test --compact
-vendor/bin/sail bin pint --format agent
-vendor/bin/sail composer audit
-vendor/bin/sail artisan security:scan-pii        # isi METABASE_ADMIN_* dulu
-vendor/bin/sail artisan metabase:check-embedding
-```
+Diagnostik lanjutan: **[`docs/runbook.md`](./docs/runbook.md)** §9 (masalah umum) dan §11 (kontak eskalasi) · **`docs/uat.md`** §9 (alur debugging) · **`docs/metabase-ids.md`** (troubleshooting embed).
 
-## Fase 6 — Operasional & Pemeliharaan (Status: SELESAI)
+## Keamanan
 
-Lihat **`docs/runbook.md`** untuk prosedur operasional lengkap (arsitektur,
-restart, rotasi secret, backup, jadwal harian, masalah umum, insiden).
+- CSP per-rute via `metabase.csp` dengan `frame-ancestors 'none'`; CSP global sengaja tidak dipasang agar panel Filament tetap berfungsi.
+- HSTS hanya dikirim pada request HTTPS + `HSTS_ENABLED=true`.
+- MFA TOTP wajib untuk panel admin; login VIP tidak terpengaruh.
+- Audit log memakai **whitelist** kolom (deny-by-default), bukan blacklist.
+- Kebijakan kata sandi: min. 12 karakter + huruf besar/kecil + angka, ditegakkan bersama oleh form Filament dan seeder.
+- Pemindaian PII otomatis tiap Senin 05:00 WITA; pencocokan berbasis batas identifier agar `nama_kecamatan` tidak ikut ditandai.
 
-**Penonaktifan VIP otomatis (WS-1)** — `vip:deactivate-expired` menyetel
-`is_active = false` bagi akun berperan `vip` yang `expires_at`-nya sudah lewat.
-Empat syaratnya: peran `vip`, `is_active` masih true, `expires_at` tidak null,
-dan `expires_at <= now()` (waktu aplikasi, **bukan** UTC). Akun `admin` tidak
-pernah tersentuh apa pun `expires_at`-nya, dan `expires_at` tidak pernah
-dihapus supaya jejak riwayat langganan tetap terbaca. `--dry-run` hanya
-menghitung, `--chunk` mengatur ukuran batch.
+Verifikasi lengkap: **[`docs/security-checklist.md`](./docs/security-checklist.md)**.
 
-**Audit penonaktifan otomatis (WS-1)** — `UserObserver::updated()` hanya mencatat
-bila `Auth::id() !== null`, sedangkan job terjadwal berjalan tanpa sesi.
-Karena itu perintah menulis audit-nya sendiri via
-`AdminActivityLogger::log('user.auto_deactivated', ...)` dengan properties
-`is_active` + `expires_at` saja, plus satu `Log::info()` ringkasan per eksekusi
-beserta ambang ISO 8601 ber-offset. Whitelist kolom tetap dipakai apa adanya.
+## Backup & Restore
 
-**Scheduler (WS-2)** — didaftarkan di `bootstrap/app.php` → `withSchedule()`
-(`app/Console/Kernel.php` tidak ada lagi sejak Laravel 11):
+- `deploy/backup/run-backup.sh` — backup harian 02:00 WITA untuk `app_db` + metadata Metabase, dengan verifikasi integritas dan retensi 14 harian + 4 mingguan.
+- `deploy/backup/restore-drill.sh` — memulihkan ke database sementara berawalan `restore_drill_`, tidak pernah menyentuh database produksi.
+- `backbone_client` **tidak** dibackup — itu milik Pusdatin.
 
-| Waktu WITA | Job |
-|---|---|
-| 00:30 | `vip:deactivate-expired` |
-| 03:00 | `audit:prune --days=365` |
-| tiap jam | `metabase:check-embedding` |
-| Senin 05:00 | `security:scan-pii` |
+Panduan lengkap: **`deploy/backup/README.md`** dan `docs/runbook.md` §7.
 
-`->timezone(config('app.timezone'))` **wajib** ada: tanpanya jadwal memakai
-`schedule_timezone` (default UTC) sehingga "00:30" berjalan pukul 08:30 WITA.
-`onOneServer()` bergantung pada cache store bersama — `CACHE_STORE=database`
-sudah memenuhi. Contoh cron: `deploy/cron/dashboard-schedule.cron`.
+## Dokumentasi Terkait
 
-**Observability (WS-4)**
+| Dokumen | Tujuan |
+| --- | --- |
+| [`MasterPlan.md`](./MasterPlan.md) | Rencana global 7 fase & peta database nyata |
+| [`docs/runbook.md`](./docs/runbook.md) | Runbook operasional: arsitektur, restart, rotasi secret, backup, insiden |
+| [`docs/security-checklist.md`](./docs/security-checklist.md) | Checklist keamanan Fase 5 & cara verifikasi tiap item |
+| [`docs/metabase-ids.md`](./docs/metabase-ids.md) | ID dashboard, konfigurasi embedding, prosedur rotasi secret |
+| [`docs/data-dictionary.md`](./docs/data-dictionary.md) | Arti tabel & kolom `backbone_client` |
+| [`docs/migration-datamart.md`](./docs/migration-datamart.md) | prosedur cutover ke `datamart` saat terisi |
+| [`docs/read-only-test.md`](./docs/read-only-test.md) | Hasil uji akses read-only `analis` |
+| [`docs/uat.md`](./docs/uat.md) | Panduan QA/UAT: skenario otomatis & manual |
+| [`deploy/backup/README.md`](./deploy/backup/README.md) | Cara pakai skrip backup & restore drill |
 
-- **Request ID** — middleware global `AssignRequestId`: UUID per request masuk ke
-  `Log::withContext(['request_id' => …])` dan ke header respons `Request-Id`.
-  Body request, header Authorization, dan nilai secret tidak pernah dibaca.
-- **Health check** — route `/up` bawaan Laravel membalas 500 **hanya** bila
-  listener melempar exception. `App\Listeners\DiagnoseApplicationHealth`
-  memeriksa DB, cache, dan disk, lalu melempar satu `RuntimeException` dengan
-  pesan generik bila ada yang gagal. Detail sebenarnya (disanitasi lewat
-  `SafeErrorMessage`) hanya masuk `Log::warning()`. Ketiga cek tetap dijalankan
-  meski ada yang gagal, agar log menyebut seluruh penyebab sekaligus.
-  **Karena itu `APP_DEBUG` wajib `false` di produksi** — dengan debug aktif,
-  route meneruskan exception apa adanya dan halaman debug membocorkan detail.
-- **Log JSON** — channel `json` baru di `config/logging.php` (Monolog
-  `JsonFormatter` ke `php://stderr`); channel bawaan tidak diubah, dan
-  diaktifkan lewat `LOG_STACK=single,json`.
+## Kontribusi & Lisensi
 
-**Backup & restore (WS-3)** — `deploy/backup/run-backup.sh` membackup hanya dua
-target: `app_db` dan metadata Metabase (`metabase_postgres`). Database backbone
-`backbone_client` milik Pusdatin dan sengaja tidak dibackup. `set -euo
-pipefail`, `pg_dump -Fc`, verifikasi magic bytes `PGDMP` + `pg_restore --list`,
-retensi 14 harian + 4 mingguan, direktori mode `700`. Password tidak pernah
-menjadi argumen baris perintah. `restore-drill.sh` memulihkan ke database
-sementara berawalan `restore_drill_` lalu membuangnya — tidak pernah menyentuh
-database yang sedang jalan. Hasil uji restore nyata tercatat di
-`docs/runbook.md` §7.
+Kontribusi lewat pull request. Baca [`MasterPlan.md`](./MasterPlan.md) lebih dulu untuk memahami konteks fase dan aturan main yang berlaku (Laravel tidak boleh menyentuh `backbone_client`, tidak ada hardcode secret, setiap perubahan logika akses perlu test). Satu fase = satu commit besar dengan pesan jelas.
 
-**Verifikasi:**
+**Lisensi belum ditetapkan** — menunggu konfirmasi owner.
 
-```bash
-cd dashboard-karangasem
-vendor/bin/sail artisan schedule:list          # 4 job terdaftar
-vendor/bin/sail artisan vip:deactivate-expired --dry-run
-./deploy/backup/run-backup.sh
-./deploy/backup/restore-drill.sh
-```
+## Kontak & Eskalasi
 
-## Fase 7 — belum dimulai
-
-- **Fase 7:** UAT lintas fase, `docs/uat.md`.
-
-> Keputusan owner D1–D5 (kanal alert, retensi, target drill, jam audit:prune,
-> healthcheck Metabase) masih terbuka — lihat `docs/runbook.md` Lampiran.
+Untuk insiden, permintaan akses VIP, atau rotasi secret, lihat **`docs/runbook.md`** §11 (kontak owner, sysadmin server, Pusdatin). Kolom kontak pada runbook harus dilengkapi owner sebelum UAT.
