@@ -23,6 +23,7 @@ class MetabaseCheckEmbeddingTest extends TestCase
             'metabase.site_url' => 'https://metabase.test',
             'metabase.embedding_secret' => 'test-secret-yang-cukup-panjang-minimal-32-karakter',
             'metabase.public_dashboard_id' => 2,
+            'metabase.public_dashboard_uuid' => '65fb774f-493a-4bbc-b438-34bf5de4c174',
             'metabase.vip_dashboard_id' => 4,
             'metabase.embed_ttl' => 600,
         ], $overrides));
@@ -92,7 +93,9 @@ class MetabaseCheckEmbeddingTest extends TestCase
     public static function missingDashboardProviders(): array
     {
         return [
-            'public' => ['metabase.public_dashboard_id', 'Metabase public dashboard ID is not configured.'],
+            // Public embed memakai UUID dashboard; ID numerik tidak berlaku di
+            // endpoint `/public/dashboard/{id}`.
+            'public' => ['metabase.public_dashboard_uuid', 'Metabase public dashboard UUID is not configured.'],
             'vip' => ['metabase.vip_dashboard_id', 'Metabase VIP dashboard ID is not configured.'],
         ];
     }

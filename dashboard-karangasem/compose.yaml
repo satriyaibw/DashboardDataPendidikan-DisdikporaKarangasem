@@ -17,8 +17,23 @@ services:
             XDEBUG_MODE: '${SAIL_XDEBUG_MODE:-off}'
             XDEBUG_CONFIG: '${SAIL_XDEBUG_CONFIG:-client_host=host.docker.internal}'
             IGNITION_LOCAL_SITES_PATH: '${PWD}'
+            # Dioperuskan sebagai environment container, BUKAN hanya dari .env.
+            # Closure `withMiddleware()` dieksekusi saat HttpKernel di-resolve,
+            # yaitu SEBELUM Laravel memuat .env — jadi `env('TRUSTED_PROXIES')`
+            # di bootstrap/app.php masih kosong dan daftar proxy tak pernah
+            # didaftarkan. Akibatnya X-Forwarded-* dari reverse proxy diabaikan
+            # dan redirect keluar dengan skema http://. Docker sudah menyediakan
+            # nilainya di $_SERVER sebelum PHP berjalan, jadi env() di sana
+            # langsung terisi.
+            TRUSTED_PROXIES: '${TRUSTED_PROXIES:-}'
         volumes:
             - '.:/var/www/html'
+            # `artisan serve` (PHP built-in server, bukan FPM) hanya membaca env[]
+            # dari php.ini CLI. Tanpa mount ini, env container (TRUSTED_PROXIES)
+            # tidak terlihat oleh getenv(), sehingga bootstrap/app.php mendaftarkan
+            # daftar proxy kosong dan header X-Forwarded-* dari tunnel diabaikan.
+            # Lihat docker/php/zz-trusted-proxies.ini.
+            - './docker/php/zz-trusted-proxies.ini:/etc/php/8.5/cli/conf.d/zz-trusted-proxies.ini:ro'
         networks:
             - sail
         depends_on:

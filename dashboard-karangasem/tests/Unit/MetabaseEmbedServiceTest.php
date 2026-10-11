@@ -8,6 +8,7 @@ use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
 use Firebase\JWT\SignatureInvalidException;
 use InvalidArgumentException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -21,6 +22,7 @@ class MetabaseEmbedServiceTest extends TestCase
             'metabase.site_url' => 'https://metabase.test',
             'metabase.embedding_secret' => 'test-secret-yang-cukup-panjang-minimal-32-karakter',
             'metabase.public_dashboard_id' => 2,
+            'metabase.public_dashboard_uuid' => '65fb774f-493a-4bbc-b438-34bf5de4c174',
             'metabase.vip_dashboard_id' => 4,
             'metabase.embed_ttl' => 600,
         ]);
@@ -51,9 +53,24 @@ class MetabaseEmbedServiceTest extends TestCase
     public function test_public_url_points_to_public_dashboard_without_token(): void
     {
         $this->assertSame(
-            'https://metabase.test/public/dashboard/2',
+            'https://metabase.test/public/dashboard/65fb774f-493a-4bbc-b438-34bf5de4c174',
             $this->service()->publicUrl(),
         );
+    }
+
+    /**
+     * Public embed memakai UUID dashboard, bukan ID numerik.
+     *
+     * Metabase tidak memetakan ID ke UUID pada endpoint `/public/dashboard/{id}`
+     * sehingga memakai ID membuat iframe menampilkan "Unauthenticated" — bukan
+     * dashboard. Guard ini mencegah regresi ke ID.
+     */
+    public function test_public_url_uses_uuid_not_the_numeric_dashboard_id(): void
+    {
+        $url = $this->service()->publicUrl();
+
+        $this->assertStringNotContainsString('/public/dashboard/2', $url);
+        $this->assertStringContainsString('/public/dashboard/65fb774f', $url);
     }
 
     public function test_public_url_strips_trailing_slash_from_site_url(): void
@@ -61,7 +78,7 @@ class MetabaseEmbedServiceTest extends TestCase
         config(['metabase.site_url' => 'https://metabase.test/']);
 
         $this->assertSame(
-            'https://metabase.test/public/dashboard/2',
+            'https://metabase.test/public/dashboard/65fb774f-493a-4bbc-b438-34bf5de4c174',
             $this->service()->publicUrl(),
         );
     }
@@ -134,13 +151,42 @@ class MetabaseEmbedServiceTest extends TestCase
         $this->service()->signedUrl();
     }
 
-    public function test_public_url_throws_when_public_dashboard_id_is_missing(): void
+    public function test_public_url_throws_when_public_dashboard_uuid_is_missing(): void
     {
-        config(['metabase.public_dashboard_id' => null]);
+        config(['metabase.public_dashboard_uuid' => null]);
 
         $this->expectException(RuntimeException::class);
 
         $this->service()->publicUrl();
+    }
+
+    /**
+     * UUID disisipkan ke path URL, jadi bentuknya harus divalidasi. Nilai rusak
+     * akan membentuk path yang tidak terduga di iframe.
+     */
+    #[DataProvider('malformedUuidProvider')]
+    public function test_public_url_rejects_a_malformed_uuid(string $value): void
+    {
+        config(['metabase.public_dashboard_uuid' => $value]);
+
+        $this->expectException(RuntimeException::class);
+
+        $this->service()->publicUrl();
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function malformedUuidProvider(): array
+    {
+        return [
+            'numeric id' => ['2'],
+            'not a uuid' => ['bukan-uuid'],
+            'path traversal attempt' => ['../../admin'],
+            'too short' => ['65fb774f-493a-4bbc'],
+            'non hex characters' => ['zzzzzzzz-493a-4bbc-b438-34bf5de4c174'],
+            'empty after trim' => ['   '],
+        ];
     }
 
     public function test_signed_url_throws_when_site_url_is_not_configured(): void

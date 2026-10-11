@@ -24,10 +24,14 @@ class MetabaseEmbedService
 
     /**
      * URL public embedding dashboard publik — tanpa token, aman untuk anonim.
+     *
+     * Public embed memakai UUID dashboard, bukan ID numerik. Metabase tidak
+     * memetakan ID ke UUID pada endpoint `/public/dashboard/{id}` sehingga ID
+     * numerik membuat iframe menampilkan halaman "Unauthenticated".
      */
     public function publicUrl(): string
     {
-        return $this->siteUrl().'/public/dashboard/'.$this->publicDashboardId();
+        return $this->siteUrl().'/public/dashboard/'.$this->publicDashboardUuid();
     }
 
     /**
@@ -101,9 +105,27 @@ class MetabaseEmbedService
         return $secret;
     }
 
-    protected function publicDashboardId(): int
+    /**
+     * UUID dashboard publik untuk public embed.
+     *
+     * @throws RuntimeException bila UUID tidak dikonfigurasi atau tidak berbentuk UUID v4
+     */
+    protected function publicDashboardUuid(): string
     {
-        return $this->requiredDashboardId('public_dashboard_id', 'public');
+        $uuid = trim((string) config('metabase.public_dashboard_uuid'));
+
+        if ($uuid === '') {
+            throw new RuntimeException('Metabase public dashboard UUID is not configured.');
+        }
+
+        // UUID:v4 persis 36 karakter (8-4-4-4-12) huruf heksadesimal. Nilai ini
+        // disisipkan ke path URL, jadi bentuknya divalidasi agar string rusak
+        // tidak ikut ter-forming ke iframe dan menjadi sumber tebakan path.
+        if (preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $uuid) !== 1) {
+            throw new RuntimeException('Metabase public dashboard UUID is not a valid UUID.');
+        }
+
+        return $uuid;
     }
 
     protected function vipDashboardId(): int

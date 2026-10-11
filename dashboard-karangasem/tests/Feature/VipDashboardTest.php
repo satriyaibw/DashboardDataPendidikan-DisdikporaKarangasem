@@ -25,6 +25,7 @@ class VipDashboardTest extends TestCase
             'metabase.site_url' => 'https://metabase.test',
             'metabase.embedding_secret' => 'test-secret-yang-cukup-panjang-minimal-32-karakter',
             'metabase.public_dashboard_id' => 2,
+            'metabase.public_dashboard_uuid' => '65fb774f-493a-4bbc-b438-34bf5de4c174',
             'metabase.vip_dashboard_id' => 4,
             'metabase.embed_ttl' => 600,
         ]);
@@ -38,13 +39,19 @@ class VipDashboardTest extends TestCase
         return $user;
     }
 
+    /**
+     * Public embed memakai UUID dashboard, bukan ID numerik. ID membuat iframe
+     * menampilkan "Unauthenticated" karena Metabase tidak memetakannya di
+     * endpoint `/public/dashboard/{id}`.
+     */
     public function test_guest_sees_public_dashboard_with_public_embed_url(): void
     {
         $this->get('/')
             ->assertOk()
             ->assertViewIs('public.dashboard')
-            ->assertViewHas('embedUrl', 'https://metabase.test/public/dashboard/2')
-            ->assertSee('/public/dashboard/2');
+            ->assertViewHas('embedUrl', 'https://metabase.test/public/dashboard/65fb774f-493a-4bbc-b438-34bf5de4c174')
+            ->assertSee('/public/dashboard/65fb774f-493a-4bbc-b438-34bf5de4c174')
+            ->assertDontSee('/public/dashboard/2"');
     }
 
     public function test_public_dashboard_links_to_the_vip_login_page(): void
@@ -54,9 +61,23 @@ class VipDashboardTest extends TestCase
             ->assertSee(route('login'));
     }
 
-    public function test_public_dashboard_fails_loudly_when_dashboard_id_is_missing(): void
+    public function test_public_dashboard_fails_loudly_when_dashboard_uuid_is_missing(): void
     {
-        config(['metabase.public_dashboard_id' => null]);
+        config(['metabase.public_dashboard_uuid' => null]);
+
+        $this->withoutExceptionHandling();
+        $this->expectException(RuntimeException::class);
+
+        $this->get('/');
+    }
+
+    /**
+     * UUID yang bukan UUID harus ditolak, bukan diteruskan ke iframe — nilainya
+     * masuk ke path URL.
+     */
+    public function test_public_dashboard_fails_loudly_when_dashboard_uuid_is_malformed(): void
+    {
+        config(['metabase.public_dashboard_uuid' => '2']);
 
         $this->withoutExceptionHandling();
         $this->expectException(RuntimeException::class);

@@ -22,8 +22,26 @@ return [
     // Minimal panjang secret yang diterima untuk penandatanganan HS256.
     'min_secret_length' => 32,
 
-    // ID dashboard public embedding (tanpa login) — lihat docs/metabase-ids.md.
+    // ID dashboard publik — dipakai `artisan security:scan-pii` yang memanggil
+    // API Metabase sebagai admin terotorisasi, sehingga ID numerik cukup.
+    // ID ini BUKAN yang dipakai untuk iframe: lihat `public_dashboard_uuid`.
     'public_dashboard_id' => env('METABASE_PUBLIC_DASHBOARD_ID'),
+
+    /*
+    | UUID dashboard publik untuk public embedding (tanpa token JWT).
+    |
+    | Berbeda dari signed embed, public embed memakai UUID dashboard
+    | (`public_uuid` di metadata Metabase), bukan ID numerik. Metabase tidak
+    | memetakan ID numerik ke UUID di endpoint `/public/dashboard/...`, sehingga
+    | memakai ID akan membuat iframe memuat halaman "Unauthenticated".
+    |
+    | Cara memperolehnya:
+    |   SELECT public_uuid FROM report_dashboard WHERE id = <METABASE_PUBLIC_DASHBOARD_ID>;
+    |
+    | Dashboard publik tanpa UUID tidak bisa dipakai untuk public embed; nilainya
+    | dibuat otomatis oleh Metabase saat public sharing diaktifkan.
+    */
+    'public_dashboard_uuid' => env('METABASE_PUBLIC_DASHBOARD_UUID'),
 
     // ID dashboard signed embedding (VIP, JWT HS256) — lihat docs/metabase-ids.md.
     'vip_dashboard_id' => env('METABASE_VIP_DASHBOARD_ID'),

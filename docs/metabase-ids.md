@@ -11,11 +11,33 @@ METABASE_SITE_URL=http://localhost:3000
 
 ## Dashboard IDs
 
-| Dashboard | ID | Akses | Keterangan |
-|---|---|---|---|
-| **Publik** | `2` | Public (tanpa login) | Agregat tinggi, tanpa PII |
-| **VIP** | `4` | User VIP (login) | Agregat detail + PII |
-| **Admin** | `3` | Admin saja | Full view, query native |
+| Dashboard | ID | UUID (public embed) | Akses | Keterangan |
+|---|---|---|---|---|
+| **Publik** | `5` | `65fb774f-493a-4bbc-b438-34bf5de4c174` | Public (tanpa login) | Agregat tinggi, tanpa PII |
+| **VIP** | `6` | — | User VIP (login, signed embed) | Agregat detail + PII |
+
+> **Penting — public embed memakai UUID, bukan ID numerik.**
+> Endpoint `/public/dashboard/{id}` milik Metabase hanya menerima `public_uuid`.
+> Memakai ID numerik membuat iframe menampilkan "Unauthenticated" alih-alih
+> dashboard. Aplikasi membacanya dari `METABASE_PUBLIC_DASHBOARD_UUID`.
+>
+> ID numerik tetap dipakai untuk hal lain (mis. `artisan security:scan-pii`
+> yang memanggil API sebagai admin terotorisasi) lewat
+> `METABASE_PUBLIC_DASHBOARD_ID`.
+>
+> UUID freshly obtained dengan:
+> `SELECT public_uuid FROM report_dashboard WHERE id = <METABASE_PUBLIC_DASHBOARD_ID>;`
+
+Kartu pada kedua dashboard:
+
+| Dashboard | Kartu | Sumber |
+|---|---|---|
+| Publik (5) | P1–P7 | `metrics.*` via `backbone_admin` (database 2) |
+| VIP (6) | V1–V6 | `metrics.*` via `backbone_admin` (database 2) |
+
+> Kartu contoh bawaan Metabase (Sample Database, H2, `database_id` 1) berada di
+> collection `Examples`/`E-commerce`. Kartu tersebut **bukan** bagian dashboard
+> 5/6 dan tidak muncul di sana.
 
 ## Database Connections
 
@@ -45,7 +67,7 @@ METABASE_SITE_URL=http://localhost:3000
 ## Embedding
 
 - **Static/Guest Embedding:** Diaktifkan untuk Dashboard VIP
-- **Public link/embed:** Hanya untuk Dashboard Publik
+- **Public link/embed:** Hanya untuk Dashboard Publik, memakai `public_uuid`
 - **Embedding Secret Key:** Disimpan di `METABASE_EMBEDDING_SECRET` (Laravel) dan `MB_EMBEDDING_SECRET_KEY` (Metabase) — **harus sama**
 
 ## Prosedur Rotasi Secret
@@ -89,6 +111,9 @@ membaca isi `resource`, `params`, dan `exp`. Karena itu TTL sengaja pendek
 
 | Gejala | Kemungkinan penyebab | Aksi |
 |---|---|---|
+| Iframe publik menampilkan "Unauthenticated" | `METABASE_PUBLIC_DASHBOARD_UUID` kosong/salah, atau diisi ID numerik | Public embed wajib UUID, bukan ID. Ambil ulang: `SELECT public_uuid FROM report_dashboard WHERE id = <id>;` |
+| Login VIP mendarat di `/admin` lalu 403 | Outdated `url.intended` di sesi dari kunjungan ke panel | Akses lagi dari `/login`; memfilter ke area `/vip/` (lihat `VipLoginController::intendedVipUrl`) |
+| Panel admin menampilkan halaman penyiapan 2FA | Admin belum memasang authenticator | Tombol "Mulai penyiapan" → pindai QR → masukkan kode 6 digit → simpan kode pemulihan |
 | Metabase tidak bisa konek DB backbone | host/port/firewall/SSL | `psql -h <host> -U admin_full -d backbone_client` dari container; cek SSL |
 | Dashboard kosong / "table not found" | GRANT belum ada untuk `admin_full` | jalankan ulang GRANT di `database/sql/admin_full_role.sql` |
 | Token embed ditolak | secret tidak sama / exp salah / TTL lewat | samakan secret, cek `exp` epoch detik |
