@@ -47,6 +47,14 @@
         <env name="METABASE_SITE_URL" value="https://metabase.test"/>
         <env name="METABASE_EMBEDDING_SECRET" value="test-secret-yang-cukup-panjang-minimal-32-karakter"/>
         <env name="METABASE_PUBLIC_DASHBOARD_ID" value="2"/>
+        <!--
+            Public embed memakai UUID dashboard, bukan ID numerik. Nilai di sini
+            wajib ada: tanpa itu `MetabaseEmbedService::publicUrl()` melempar
+            RuntimeException dan setiap test yang merender halaman publik gagal
+            dengan 500 — bukan karena view rusak, tapi karena konfigurasi embed
+            tidak lengkap.
+        -->
+        <env name="METABASE_PUBLIC_DASHBOARD_UUID" value="65fb774f-493a-4bbc-b438-34bf5de4c174"/>
         <env name="METABASE_VIP_DASHBOARD_ID" value="4"/>
         <env name="METABASE_EMBED_TTL" value="600"/>
         <env name="PULSE_ENABLED" value="false"/>
