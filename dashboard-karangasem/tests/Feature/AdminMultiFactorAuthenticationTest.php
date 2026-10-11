@@ -181,4 +181,50 @@ class AdminMultiFactorAuthenticationTest extends TestCase
 
         $this->assertAuthenticatedAs($vip);
     }
+
+    /**
+     * Halaman penyiapan MFA wajib memberi petunjuk yang bisa dipegang operator
+     * baru.
+     *
+     * Halaman bawaan Filament hanya menampilkan satu tautan teks "Aktifkan"
+     * dengan heading bahasa Inggris: tidak ada tombol yang jelas dan tidak ada
+     * penjelasan harus melakukan apa. Bagi operator hal itu terbaca sebagai
+     * halaman buntu — keluhan yang diterima dari pengguna.
+     */
+    public function test_setup_page_explains_the_steps_and_shows_the_setup_action(): void
+    {
+        $this->actingAs($this->adminUser());
+
+        $this->get(Filament::getSetUpRequiredMultiFactorAuthenticationUrl())
+            ->assertOk()
+            ->assertSee('authenticator', escape: false)
+            // Aksi penyiapan harus tampil, bukan sekadar teks.
+            ->assertSee('Mulai penyiapan');
+    }
+
+    /**
+     * Petunjuk harus menyebut QR code dan kode pemulihan: tanpa keduanya
+     * operator tidak tahu apa yang harus dipindai dan apa yang harus disimpan.
+     */
+    public function test_setup_page_mentions_qr_code_and_recovery_codes(): void
+    {
+        $this->actingAs($this->adminUser());
+
+        $this->get(Filament::getSetUpRequiredMultiFactorAuthenticationUrl())
+            ->assertOk()
+            ->assertSee('kode QR', escape: false)
+            ->assertSee('kode pemulihan', escape: false);
+    }
+
+    /**
+     * Halaman penyiapan tidak boleh muncul bagi admin yang MFA-nya sudah aktif —
+     * halaman itu hanya untuk pemasangan pertama.
+     */
+    public function test_setup_page_redirects_once_multi_factor_is_enabled(): void
+    {
+        $this->actingAs($this->adminUserWithMultiFactorAuthentication());
+
+        $this->get(Filament::getSetUpRequiredMultiFactorAuthenticationUrl())
+            ->assertRedirect(Filament::getUrl());
+    }
 }

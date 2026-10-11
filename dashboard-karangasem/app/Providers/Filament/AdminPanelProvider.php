@@ -2,6 +2,7 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Pages\SetUpMultiFactorAuthentication;
 use Filament\Auth\MultiFactor\App\AppAuthentication;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
@@ -43,7 +44,7 @@ class AdminPanelProvider extends PanelProvider
             // antar permintaan. CACHE_STORE=database sudah memenuhi.
             ->multiFactorAuthentication([
                 AppAuthentication::make(),
-            ], isRequired: true)
+            ], setUpRequiredAction: SetUpMultiFactorAuthentication::class, isRequired: true)
             ->colors([
                 'primary' => Color::Amber,
             ])

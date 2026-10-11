@@ -122,6 +122,14 @@ Jalankan dari `dashboard-karangasem/`. Test suite **wajib lewat Sail** — `php 
 | `sail bin pint --test --format agent` | Gaya kode | Tanpa diff |
 | `sail composer audit` | Advisory dependensi | Tidak ada advisory |
 | `sail artisan security:scan-pii` | Pemindaian PII dashboard Publik/VIP | Exit 0, laporan di `storage/app/security/` |
+
+> **Triage `security:scan-pii` (2026-10-11):** exit 1 dengan kartu P5 (publik)
+> dan V2 (VIP) menandai kolom `nama`. Keduanya hasil `JOIN ref.tingkat_pendidikan`
+> dan di-aggregate per tingkat — `nama` di sana berisi label jenjang
+> ("Tingkatan 2, Kls 4", "TPA"), bukan nama orang. Scanner sengaja fail-closed,
+> jadi **false positive ini diputuskan manusia, bukan diam-diam diabaikan**.
+> Perlu keputusan: beri pengecualian per tabel referensi, atau ubah query agar
+> tidak men-exposed kolom `nama`.
 | `sail artisan metabase:check-embedding` | Validasi konfigurasi & URL bertanda tangan | Exit 0 |
 | `sail artisan schedule:list` | Verifikasi 4 job terjadwal | 4 baris jadwal tampil |
 

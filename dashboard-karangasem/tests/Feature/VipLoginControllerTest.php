@@ -224,4 +224,60 @@ class VipLoginControllerTest extends TestCase
 
         $this->get('/vip/dashboard')->assertRedirect('/login');
     }
+
+    /**
+     * Login VIP tidak boleh_segera kembali ke tujuan di luar area VIP.
+     *
+     * `redirect()->intended()` memakai URL yang disimpan middleware `Auth`.
+     * Ketika pengguna membuka `/admin` lebih dulu, nilai itu berisi `/admin` —
+     * panel Filament yang hanya untuk role `admin`. Tanpa penyaringan, akun VIP
+     * berakhir di 403 dan tidak bisa logout karena tombol panel tak
+     * terjangkau. Ini skenario yang dilaporkan pengguna.
+     */
+    public function test_login_ignores_intended_url_outside_the_vip_area(): void
+    {
+        $user = $this->vipUser();
+
+        // Middleware Auth menyimpan tujuan saat area terlindungi ditolak.
+        $this->actingAs($user)->get('/admin');
+
+        $this->post('/vip/login', [
+            'email' => $user->email,
+            'password' => 'password',
+        ])->assertRedirect('/vip/dashboard');
+    }
+
+    /**
+     * Menyaring tujuan bukan berarti membuang semua: tautan dalam area VIP
+     * harus tetap dihormati agar pengguna tidak kehilangan halaman yang
+     * memang sedang dituju.
+     */
+    public function test_login_honours_intended_url_inside_the_vip_area(): void
+    {
+        $user = $this->vipUser();
+
+        $this->actingAs($user)->get('/vip/dashboard');
+
+        $this->post('/vip/login', [
+            'email' => $user->email,
+            'password' => 'password',
+        ])->assertRedirect('/vip/dashboard');
+    }
+
+    /**
+     * Tujuan dari luar situs (origin berbeda) tidak boleh dipakai, walau path
+     *-nya terlihat wajar: nilai sesi tidak boleh mengarahkan pengguna ke
+     * server lain.
+     */
+    public function test_login_never_redirects_off_site(): void
+    {
+        $user = $this->vipUser();
+
+        $this->actingAs($user)
+            ->withSession(['url.intended' => 'https://evil.example/vip/steal'])
+            ->post('/vip/login', [
+                'email' => $user->email,
+                'password' => 'password',
+            ])->assertRedirect('/vip/dashboard');
+    }
 }

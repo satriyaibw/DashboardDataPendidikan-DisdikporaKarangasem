@@ -31,6 +31,15 @@ class SecurityScanPii extends Command
 
     private const DASHBOARD_TIMEOUT_SECONDS = 20;
 
+    /**
+     * Header yang dibaca Metabase untuk session id.
+     *
+     * API Metabase memakai header `X-Metabase-Session`. `Http::withToken()`
+     * mengirim `Authorization: Bearer <id>` yang Metabase abaikan, sehingga
+     * setiap permintaan berakhir "Unauthenticated" (401).
+     */
+    private const SESSION_HEADER = 'X-Metabase-Session';
+
     public function handle(PiiScanner $scanner): int
     {
         $siteUrl = rtrim((string) config('metabase.site_url'), '/');
@@ -156,7 +165,7 @@ class SecurityScanPii extends Command
 
         foreach ($targets as $label => $dashboardId) {
             $response = Http::timeout(self::DASHBOARD_TIMEOUT_SECONDS)
-                ->withToken($sessionId)
+                ->withHeaders([self::SESSION_HEADER => $sessionId])
                 ->get($siteUrl.'/api/dashboard/'.$dashboardId);
 
             if ($response->failed()) {
@@ -284,7 +293,7 @@ class SecurityScanPii extends Command
         }
 
         $response = Http::timeout(self::DASHBOARD_TIMEOUT_SECONDS)
-            ->withToken($sessionId)
+            ->withHeaders([self::SESSION_HEADER => $sessionId])
             ->get($siteUrl.'/api/table/'.$tableId.'/query_metadata');
 
         if ($response->failed()) {

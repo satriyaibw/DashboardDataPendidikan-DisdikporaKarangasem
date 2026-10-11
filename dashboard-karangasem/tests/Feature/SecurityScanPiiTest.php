@@ -20,6 +20,7 @@ class SecurityScanPiiTest extends TestCase
         config([
             'metabase.site_url' => 'https://metabase.test',
             'metabase.public_dashboard_id' => 2,
+            'metabase.public_dashboard_uuid' => '65fb774f-493a-4bbc-b438-34bf5de4c174',
             'metabase.vip_dashboard_id' => 4,
             'metabase.admin_email' => 'admin@example.com',
             'metabase.admin_password' => 'rahasia-admin',
@@ -39,6 +40,44 @@ class SecurityScanPiiTest extends TestCase
                 'native' => ['query' => $sql],
             ],
         ];
+    }
+
+    /**
+     * Session id Metabase harus dikirim lewat header `X-Metabase-Session`.
+     *
+     * `Http::withToken()` mengirim `Authorization: Bearer <id>` yang Metabase
+     * abaikan, sehingga setiap permintaan dashboard berakhir 401 "Unauthenticated".
+     * Akibatnya command hanya mencetak peringatan, tidak memeriksa satu pun kartu,
+     * lalu keluar dengan exit 0 — pemindaian PII tampak lulus padahal tidak
+     * berjalan sama sekali. Guard ini mencegah regresi ke sana.
+     */
+    public function test_session_is_sent_in_the_header_metabase_actually_reads(): void
+    {
+        Http::fake([
+            '*/api/session' => Http::response(['id' => 'session-rahasia']),
+            '*/api/dashboard/*' => Http::response(['dashcards' => []]),
+        ]);
+
+        $this->artisan('security:scan-pii');
+
+        $authorised = Http::recorded()->filter(
+            fn ($pair) => str_contains($pair[0]->url(), '/api/dashboard/')
+                || str_contains($pair[0]->url(), '/query_metadata')
+        )->values()->all();
+
+        $this->assertNotEmpty($authorised, 'Command harus mengambil data dashboard untuk dipindai.');
+
+        foreach ($authorised as [$request]) {
+            $this->assertSame(
+                ['session-rahasia'],
+                $request->header('X-Metabase-Session'),
+                'Metabase hanya membaca session id dari header X-Metabase-Session.',
+            );
+            $this->assertEmpty(
+                $request->header('Authorization'),
+                'Authorization: Bearer tidak dikenali Metabase dan membuat respons 401.',
+            );
+        }
     }
 
     public function test_native_query_with_pii_column_fails_the_scan(): void

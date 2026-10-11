@@ -305,6 +305,9 @@ hilang tanpa jejak.
 | Gejala | Penyebab | Aksi |
 |---|---|---|
 | Halaman dashboard kosong (iframe putih) | Metabase mati atau embed ditolak | `vendor/bin/sail artisan metabase:check-embedding` |
+| Iframe publik menampilkan "Unauthenticated" | `METABASE_PUBLIC_DASHBOARD_UUID` kosong/salah (public embed wajib UUID, bukan ID numerik) | Ambil ulang UUID: `SELECT public_uuid FROM report_dashboard WHERE id = <id>;` |
+| Login VIP mendarat di `/admin` lalu 403 | Sesi menyimpan `url.intended` dari kunjungan ke panel | Akses lagi lewat `/login`; tujuan kini difilter ke area `/vip/` |
+| Halaman penyiapan 2FA tampak buntu | Admin belum memasang authenticator | Klik "Mulai penyiapan", pindai QR, masukkan kode 6 digit, simpan kode pemulihan |
 | Semua embed mati setelah rotasi secret | `METABASE_EMBEDDING_SECRET` ≠ `MB_EMBEDDING_SECRET_KEY` | Samakan keduanya, restart Metabase, `config:clear` |
 | Tampilan dashboard tidak berubah | Cache query Metabase | Refresh cache, §4 |
 | Akun VIP masih bisa masuk padahal masa aktif habis | Job 00:30 belum jalan | `php artisan vip:deactivate-expired`, periksa cron §8 |
